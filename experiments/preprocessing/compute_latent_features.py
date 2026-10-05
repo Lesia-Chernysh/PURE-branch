@@ -15,6 +15,7 @@ from tqdm import tqdm
 from zennit.core import Composite
 
 from datasets import get_dataset
+from experiments import preprocessing
 from models import get_fn_model_loader
 from utils.helper import load_config, get_layer_names_model
 
@@ -25,7 +26,7 @@ def get_args():
     parser.add_argument('--config_file', type=str,
                         default="configs/imagenet/resnet101_timm.yaml")
     parser.add_argument('--split', type=str, default="test")
-    parser.add_argument('--layer_name', type=str, default="block_3")
+    parser.add_argument('--layer_name', type=str, default="layer4.1.conv2")
     return parser.parse_args()
 
 
@@ -54,12 +55,15 @@ def main(model_name,
     layer_map = {layer: cc for layer in layer_names}
 
     fname = f"{model_name}_{dataset_name}_{split}"
+    # TODO: I changed max_target from max to sum and abs_norm from False to True
     fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
-                              path=f"crp_files/{fname}", max_target="max", abs_norm=False)
+                              path=f"crp_files/{fname}", max_target="sum", abs_norm=True)
 
     grad_composite = Composite()
 
     layer_name = layer_name
+    print(f"layer_name: {layer_name}")
+    print(f"layer_names: {layer_names}")
     prev_layer = layer_names[layer_names.index(layer_name) - 1]
 
     d_c_sorted, a, rf_c_sorted = load_maximization(fv.ActMax.PATH, layer_name)
@@ -79,27 +83,34 @@ def main(model_name,
         cond_relevances_1.append([])
         cond_relevances_2.append([])
 
+        # TODO: solve the problem with sample mismatch in other way
         most_act_sample_ids = d_c_sorted[:, neuron]
+        most_act_sample_ids = most_act_sample_ids[
+            (most_act_sample_ids >= 0)
+            & (most_act_sample_ids < len(dataset))
+            ]
+
         dataset_subset = torch.utils.data.Subset(dataset, most_act_sample_ids.flatten())
         dataloader = DataLoader(dataset_subset, batch_size=batch_size, shuffle=False, num_workers=8)
 
         for x, _ in dataloader:
-            x = x.to(device).requires_grad_()
+            if x is not None:
+                x = x.to(device).requires_grad_()
 
-            attr = attribution(x.requires_grad_(),
-                               [{layer_name: neuron}],
-                               grad_composite,
-                               record_layer=layer_names,
-                               start_layer=layer_name,
-                               init_rel=lambda act: act.clamp(min=0))
+                attr = attribution(x.requires_grad_(),
+                                   [{layer_name: neuron}],
+                                   grad_composite,
+                                   record_layer=layer_names,
+                                   start_layer=layer_name,
+                                   init_rel=lambda act: act.clamp(min=0))
 
-            lower_gradient = attr.relevances[prev_layer].detach().cpu()
-            lower_activations = attr.activations[prev_layer].detach().cpu()
-            lower_relevance = lower_gradient * lower_activations
-            cond_relevances_1[i].append(cc.attribute(lower_relevance, abs_norm=True))
+                lower_gradient = attr.relevances[prev_layer].detach().cpu()
+                lower_activations = attr.activations[prev_layer].detach().cpu()
+                lower_relevance = lower_gradient * lower_activations
+                cond_relevances_1[i].append(cc.attribute(lower_relevance, abs_norm=True))
 
-            max_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).amax((2, 3)))
-            mean_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).mean((2, 3)))
+                max_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).amax((2, 3)))
+                mean_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).mean((2, 3)))
 
         max_activations[i] = torch.cat(max_activations[i], dim=0)
         mean_activations[i] = torch.cat(mean_activations[i], dim=0)
@@ -129,6 +140,7 @@ if __name__ == "__main__":
     dataset_name = config['dataset_name']
     batch_size = 40
     data_path = config.get('data_path', None)
+    print(f"data_path: {data_path}")
     ckpt_path = config.get('ckpt_path', None)
     split = args.split
     layer_name = args.layer_name

@@ -1,0 +1,1 @@
+python3 -m experiments.preprocessing.compute_latent_features --config_file "configs/imagenet-mini/resnet50_transformers.yaml" --split "train"

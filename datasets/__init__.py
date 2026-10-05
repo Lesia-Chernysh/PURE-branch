@@ -1,9 +1,11 @@
 from typing import Callable
 
 from datasets.imagenet import get_imagenet
+from datasets.imagenet_mini import get_imagenetmini
 
 DATASETS = {
     "imagenet": get_imagenet,
+    "imagenet-mini": get_imagenetmini,
 }
 
 

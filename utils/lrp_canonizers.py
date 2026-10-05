@@ -12,7 +12,10 @@ from zennit.canonizers import CompositeCanonizer, SequentialMergeBatchNorm, Attr
 from zennit.layer import Sum
 from timm.models.resnet import Bottleneck as ResNetBottleneckTimm
 from timm.models._efficientnet_blocks import ConvBnAct as ConvBnActTimm, EdgeResidual as EdgeResidualTimm
-from timm.models._efficientnet_blocks import InvertedResidual as InvertedResidualTimm, SqueezeExcite as SqueezeExcitationTimm
+from timm.models._efficientnet_blocks import InvertedResidual as InvertedResidualTimm, \
+    SqueezeExcite as SqueezeExcitationTimm
+from zennit.types import ConvolutionTranspose
+
 
 class SignalOnlyGate(torch.autograd.Function):
 
@@ -49,7 +52,7 @@ class SECanonizer(canonizers.AttributeCanonizer):
     def forward(self, input):
         scale = self._scale(input)
         return self.fn_gate.apply(scale, input)
-    
+
     @staticmethod
     def forward_timm(self, x: torch.Tensor) -> torch.Tensor:
         x_se = x.mean((2, 3), keepdim=True)
@@ -177,6 +180,247 @@ class VITCanonizer(canonizers.CompositeCanonizer):
         ))
 
 
+class ResNetCanonizer(CompositeCanonizer):
+    '''Canonizer for torchvision.models.resnet* type models. This applies SequentialMergeBatchNorm, as well as
+    add a Sum module to the Bottleneck modules and overload their forward method to use the Sum module instead of
+    simply adding two tensors, such that forward and backward hooks may be applied.'''
+
+    def __init__(self):
+        super().__init__((
+            SequentialMergeBatchNorm(),
+            ResNetBottleneckCanonizer(),
+            ResNetBasicBlockCanonizer(),
+        ))
+
+
+class EfficientNetConvBnAct(AttributeCanonizer):
+    '''Canonizer specifically for ConvBnAct of timm.models._efficientnet_blocks type models.'''
+
+    def __init__(self):
+        super().__init__(self._attribute_map)
+
+    @classmethod
+    def _attribute_map(cls, name, module):
+
+        if isinstance(module, ConvBnActTimm):
+            bn = torch.nn.BatchNorm2d(module.bn1.num_features, module.bn1.eps, module.bn1.momentum, module.bn1.affine,
+                                      module.bn1.track_running_stats)
+            setattr(bn, 'running_mean', module.bn1.running_mean)
+            setattr(bn, 'running_var', module.bn1.running_var)
+            setattr(bn, 'weight', module.bn1.weight)
+            setattr(bn, 'bias', module.bn1.bias)
+            bn.to(module.bn1.weight.device)
+            bn.eval() if not module.training else bn.train()
+
+            attributes = {
+                'forward': cls.forward_timm.__get__(module),
+                'canonizer_sum': Sum(),
+                'act': module.bn1.act,
+                'conv_': copy.deepcopy(module.conv),
+                'bn1_': bn,
+            }
+            return attributes
+        return None
+
+    @staticmethod
+    def forward_timm(self, x: torch.Tensor) -> torch.Tensor:
+        shortcut = x
+        x = self.conv_(x)
+        x = self.bn1_(x)
+        x = self.act(x)
+        if self.has_skip:
+            x = torch.stack([self.drop_path(x), shortcut], dim=-1)
+            x = self.canonizer_sum(x)
+        return x
+
+
+class EfficientNetInvertedResidual(AttributeCanonizer):
+    '''Canonizer specifically for InvertedResidual of timm.models._efficientnet_blocks type models.'''
+
+    def __init__(self):
+        super().__init__(self._attribute_map)
+
+    @classmethod
+    def _attribute_map(cls, name, module):
+
+        if isinstance(module, InvertedResidualTimm):
+            bns = []
+            for bn in ['bn1', 'bn2', 'bn3']:
+                bn_module = getattr(module, bn)
+                bn_new = torch.nn.BatchNorm2d(bn_module.num_features, bn_module.eps, bn_module.momentum,
+                                              bn_module.affine, bn_module.track_running_stats)
+                setattr(bn_new, 'running_mean', bn_module.running_mean)
+                setattr(bn_new, 'running_var', bn_module.running_var)
+                setattr(bn_new, 'weight', bn_module.weight)
+                setattr(bn_new, 'bias', bn_module.bias)
+                bn_new.to(bn_module.weight.device)
+                bn_new.eval() if not module.training else bn_new.train()
+                bns.append(bn_new)
+
+            attributes = {
+                'forward': cls.forward.__get__(module),
+                'canonizer_sum': Sum(),
+                'bn1_act': module.bn1.act,
+                'bn2_act': module.bn2.act,
+                'bn3_act': module.bn3.act,
+                'conv_pw_': copy.deepcopy(module.conv_pw),
+                'bn1_': bns[0],
+                'conv_dw_': copy.deepcopy(module.conv_dw),
+                'bn2_': bns[1],
+                'conv_pwl_': copy.deepcopy(module.conv_pwl),
+                'bn3_': bns[2],
+            }
+
+            return attributes
+        return None
+
+    @staticmethod
+    def forward(self, x):
+        shortcut = x
+        x = self.conv_pw_(x)
+        x = self.bn1_(x)
+        x = self.bn1_act(x)
+        x = self.conv_dw_(x)
+        x = self.bn2_(x)
+        x = self.bn2_act(x)
+        x = self.se(x)
+        x = self.conv_pwl_(x)
+        x = self.bn3_(x)
+        x = self.bn3_act(x)
+        if self.has_skip:
+            # x = self.drop_path(x) + shortcut
+            x = torch.stack([self.drop_path(x), shortcut], dim=-1)
+            x = self.canonizer_sum(x)
+        return x
+
+
+class EfficientNetEdgeResidual(AttributeCanonizer):
+    '''Canonizer specifically for EdgeResidual of timm.models._efficientnet_blocks type models.'''
+
+    def __init__(self):
+        super().__init__(self._attribute_map)
+
+    @classmethod
+    def _attribute_map(cls, name, module):
+
+        if isinstance(module, EdgeResidualTimm):
+            bns = []
+            for bn in ['bn1', 'bn2']:
+                bn_module = getattr(module, bn)
+                bn_new = torch.nn.BatchNorm2d(bn_module.num_features, bn_module.eps, bn_module.momentum,
+                                              bn_module.affine, bn_module.track_running_stats)
+                setattr(bn_new, 'running_mean', bn_module.running_mean)
+                setattr(bn_new, 'running_var', bn_module.running_var)
+                setattr(bn_new, 'weight', bn_module.weight)
+                setattr(bn_new, 'bias', bn_module.bias)
+                bn_new.to(bn_module.weight.device)
+                bn_new.eval() if not module.training else bn_new.train()
+
+                bns.append(bn_new)
+            attributes = {
+                'forward': cls.forward.__get__(module),
+                'canonizer_sum': Sum(),
+                'act1': module.bn1.act,
+                'act2': module.bn2.act,
+                'conv_exp_': copy.deepcopy(module.conv_exp),
+                'bn1_': bns[0],
+                'conv_pwl_': copy.deepcopy(module.conv_pwl),
+                'bn2_': bns[1],
+            }
+            return attributes
+        return None
+
+    @staticmethod
+    def forward(self, x):
+        shortcut = x
+        x = self.conv_exp_(x)
+        x = self.bn1_(x)
+        x = self.act1(x)
+        x = self.se(x)
+        x = self.conv_pwl_(x)
+        x = self.bn2_(x)
+        x = self.act2(x)
+        if self.has_skip:
+            # x = self.drop_path(x) + shortcut
+            x = torch.stack([self.drop_path(x), shortcut], dim=-1)
+            x = self.canonizer_sum(x)
+
+        return x
+
+
+class EfficientNetV2Canonizer(CompositeCanonizer):
+    '''Canonizer for timm.models.efficientnet* type models. This applies SequentialMergeBatchNorm, as well as
+    add a Sum module to the building block modules and overload their forward method to use the Sum module instead of
+    simply adding two tensors, such that forward and backward hooks may be applied.'''
+
+    def __init__(self):
+        super().__init__((
+            EfficientNetInvertedResidual(),
+            EfficientNetEdgeResidual(),
+            EfficientNetConvBnAct(),
+            SequentialMergeBatchNorm(),
+            SECanonizer(),
+        ))
+
+
+class ResNetBasicBlockCanonizer(AttributeCanonizer):
+    '''Canonizer specifically for BasicBlocks of torchvision.models.resnet* type models.'''
+
+    def __init__(self):
+        super().__init__(self._attribute_map)
+
+    @classmethod
+    def _attribute_map(cls, name, module):
+        '''Create a forward function and a Sum module to overload as new attributes for module.
+
+        Parameters
+        ----------
+        name : string
+            Name by which the module is identified.
+        module : obj:`torch.nn.Module`
+            Instance of a module. If this is a BasicBlock layer, the appropriate attributes to overload are returned.
+
+        Returns
+        -------
+        None or dict
+            None if `module` is not an instance of BasicBlock, otherwise the appropriate attributes to overload onto
+            the module instance.
+        '''
+        if isinstance(module, ResNetBasicBlock):
+            attributes = {
+                'forward': cls.forward.__get__(module),
+                'canonizer_sum': Sum(),
+            }
+            return attributes
+        return None
+
+    @staticmethod
+    def forward(self, x):
+        '''Modified BasicBlock forward for ResNet.'''
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out = torch.stack([identity, out], dim=-1)
+        out = self.canonizer_sum(out)
+
+        if hasattr(self, 'last_conv'):
+            out = self.last_conv(out)
+            out = out + 0
+
+        out = self.relu(out)
+
+        return out
+
+
 class ResNetBottleneckCanonizer(AttributeCanonizer):
     '''Canonizer specifically for Bottlenecks of torchvision.models.resnet* type models.'''
 
@@ -239,270 +483,84 @@ class ResNetBottleneckCanonizer(AttributeCanonizer):
         out = self.relu(out)
         return out
 
-    @staticmethod
-    def forward_timm(self, x: torch.Tensor) -> torch.Tensor:
-        shortcut = x
 
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.act1(x)
-
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.drop_block(x)
-        x = self.act2(x)
-        x = self.aa(x)
-
-        x = self.conv3(x)
-        x = self.bn3(x)
-
-        if self.se is not None:
-            x = self.se(x)
-
-        if self.drop_path is not None:
-            x = self.drop_path(x)
-
-        if self.downsample is not None:
-            shortcut = self.downsample(shortcut)
-        # x += shortcut
-        x = torch.stack([shortcut, x], dim=-1)
-        x = self.canonizer_sum(x)
-        x = self.act3(x)
-
-        return x
-
-
-class ResNetBasicBlockCanonizer(AttributeCanonizer):
-    '''Canonizer specifically for BasicBlocks of torchvision.models.resnet* type models.'''
-
-    def __init__(self):
-        super().__init__(self._attribute_map)
-
-    @classmethod
-    def _attribute_map(cls, name, module):
-        '''Create a forward function and a Sum module to overload as new attributes for module.
-
-        Parameters
-        ----------
-        name : string
-            Name by which the module is identified.
-        module : obj:`torch.nn.Module`
-            Instance of a module. If this is a BasicBlock layer, the appropriate attributes to overload are returned.
-
-        Returns
-        -------
-        None or dict
-            None if `module` is not an instance of BasicBlock, otherwise the appropriate attributes to overload onto
-            the module instance.
-        '''
-        if isinstance(module, ResNetBasicBlock):
-            attributes = {
-                'forward': cls.forward.__get__(module),
-                'canonizer_sum': Sum(),
-            }
-            return attributes
-        return None
+class CRPCompatibleMergeBatchNorm(SequentialMergeBatchNorm):
+    """Makes eps in normalization layer > 0. Otherwise, an error arises."""
 
     @staticmethod
-    def forward(self, x):
-        '''Modified BasicBlock forward for ResNet.'''
-        identity = x
+    def merge_batch_norm(modules, batch_norm):
+        denominator = (
+                              batch_norm.running_var + batch_norm.eps
+                      ) ** 0.5
 
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
+        scale = batch_norm.weight / denominator
 
-        out = self.conv2(out)
-        out = self.bn2(out)
+        for module in modules:
+            if module.bias is None:
+                module.bias = torch.nn.Parameter(
+                    torch.zeros_like(batch_norm.bias)
+                )
 
-        if self.downsample is not None:
-            identity = self.downsample(x)
+            index = (
+                slice(None),
+                *((None,) * (module.weight.ndim - 1)),
+            )
 
-        out = torch.stack([identity, out], dim=-1)
-        out = self.canonizer_sum(out)
+            if isinstance(module, ConvolutionTranspose):
+                index = index[1::-1] + index[2:]
 
-        if hasattr(self, 'last_conv'):
-            out = self.last_conv(out)
-            out = out + 0
+            object.__setattr__(
+                module,
+                "weight",
+                module.weight * scale[index],
+            )
 
-        out = self.relu(out)
+            object.__setattr__(
+                module,
+                "bias",
+                (
+                        module.bias - batch_norm.running_mean
+                ) * scale + batch_norm.bias,
+            )
 
-        return out
+        # Identity BatchNorm with positive eps:
+        #
+        # (x - 0) / sqrt(0.5 + 0.5) * 1 + 0 = x
+        object.__setattr__(
+            batch_norm,
+            "running_mean",
+            torch.zeros_like(batch_norm.running_mean),
+        )
+        object.__setattr__(
+            batch_norm,
+            "running_var",
+            torch.full_like(batch_norm.running_var, 0.5),
+        )
+        object.__setattr__(
+            batch_norm,
+            "bias",
+            torch.zeros_like(batch_norm.bias),
+        )
+        object.__setattr__(
+            batch_norm,
+            "weight",
+            torch.ones_like(batch_norm.weight),
+        )
+        object.__setattr__(
+            batch_norm,
+            "eps",
+            0.5,
+        )
 
 
-class ResNetCanonizer(CompositeCanonizer):
+class PUREResNetCanonizer(CompositeCanonizer):
     '''Canonizer for torchvision.models.resnet* type models. This applies SequentialMergeBatchNorm, as well as
     add a Sum module to the Bottleneck modules and overload their forward method to use the Sum module instead of
     simply adding two tensors, such that forward and backward hooks may be applied.'''
 
     def __init__(self):
         super().__init__((
-            SequentialMergeBatchNorm(),
+            CRPCompatibleMergeBatchNorm(),
             ResNetBottleneckCanonizer(),
             ResNetBasicBlockCanonizer(),
-        ))
-
-
-
-class EfficientNetConvBnAct(AttributeCanonizer):
-    '''Canonizer specifically for ConvBnAct of timm.models._efficientnet_blocks type models.'''
-
-    def __init__(self):
-        super().__init__(self._attribute_map)
-
-    @classmethod
-    def _attribute_map(cls, name, module):
-        
-        if isinstance(module, ConvBnActTimm):
-            bn = torch.nn.BatchNorm2d(module.bn1.num_features, module.bn1.eps, module.bn1.momentum, module.bn1.affine, module.bn1.track_running_stats)
-            setattr(bn, 'running_mean', module.bn1.running_mean)
-            setattr(bn, 'running_var', module.bn1.running_var)
-            setattr(bn, 'weight', module.bn1.weight)
-            setattr(bn, 'bias', module.bn1.bias)
-            bn.to(module.bn1.weight.device)
-            bn.eval() if not module.training else bn.train()
-
-            attributes = {
-                'forward': cls.forward_timm.__get__(module),
-                'canonizer_sum': Sum(),
-                'act': module.bn1.act,
-                'conv_': copy.deepcopy(module.conv),
-                'bn1_': bn,
-            }
-            return attributes
-        return None
-
-    @staticmethod
-    def forward_timm(self, x: torch.Tensor) -> torch.Tensor:
-        shortcut = x
-        x = self.conv_(x)
-        x = self.bn1_(x)
-        x = self.act(x)
-        if self.has_skip:
-            x = torch.stack([self.drop_path(x), shortcut], dim=-1)
-            x = self.canonizer_sum(x)
-        return x
-    
-
-class EfficientNetInvertedResidual(AttributeCanonizer):
-    '''Canonizer specifically for InvertedResidual of timm.models._efficientnet_blocks type models.'''
-
-    def __init__(self):
-        super().__init__(self._attribute_map)
-
-    @classmethod
-    def _attribute_map(cls, name, module):
-        
-        if isinstance(module, InvertedResidualTimm):
-            bns = []
-            for bn in ['bn1', 'bn2', 'bn3']:
-                bn_module = getattr(module, bn)
-                bn_new = torch.nn.BatchNorm2d(bn_module.num_features, bn_module.eps, bn_module.momentum, bn_module.affine, bn_module.track_running_stats)
-                setattr(bn_new, 'running_mean', bn_module.running_mean)
-                setattr(bn_new, 'running_var', bn_module.running_var)
-                setattr(bn_new, 'weight', bn_module.weight)
-                setattr(bn_new, 'bias', bn_module.bias)
-                bn_new.to(bn_module.weight.device)
-                bn_new.eval() if not module.training else bn_new.train()
-                bns.append(bn_new)
-
-            attributes = {
-                'forward': cls.forward.__get__(module),
-                'canonizer_sum': Sum(),
-                'bn1_act': module.bn1.act,
-                'bn2_act': module.bn2.act,
-                'bn3_act': module.bn3.act,
-                'conv_pw_': copy.deepcopy(module.conv_pw),
-                'bn1_': bns[0],
-                'conv_dw_': copy.deepcopy(module.conv_dw),
-                'bn2_': bns[1],
-                'conv_pwl_': copy.deepcopy(module.conv_pwl),
-                'bn3_': bns[2],
-            }
-
-            return attributes
-        return None
-
-    @staticmethod
-    def forward(self, x):
-        shortcut = x
-        x = self.conv_pw_(x)
-        x = self.bn1_(x)
-        x = self.bn1_act(x)
-        x = self.conv_dw_(x)
-        x = self.bn2_(x)
-        x = self.bn2_act(x)
-        x = self.se(x)
-        x = self.conv_pwl_(x)
-        x = self.bn3_(x)
-        x = self.bn3_act(x)
-        if self.has_skip:
-            # x = self.drop_path(x) + shortcut
-            x = torch.stack([self.drop_path(x), shortcut], dim=-1)
-            x = self.canonizer_sum(x)
-        return x
-
-class EfficientNetEdgeResidual(AttributeCanonizer):
-    '''Canonizer specifically for EdgeResidual of timm.models._efficientnet_blocks type models.'''
-
-    def __init__(self):
-        super().__init__(self._attribute_map)
-
-    @classmethod
-    def _attribute_map(cls, name, module):
-   
-        if isinstance(module, EdgeResidualTimm):
-            bns = []
-            for bn in ['bn1', 'bn2']:
-                bn_module = getattr(module, bn)
-                bn_new = torch.nn.BatchNorm2d(bn_module.num_features, bn_module.eps, bn_module.momentum, bn_module.affine, bn_module.track_running_stats)
-                setattr(bn_new, 'running_mean', bn_module.running_mean)
-                setattr(bn_new, 'running_var', bn_module.running_var)
-                setattr(bn_new, 'weight', bn_module.weight)
-                setattr(bn_new, 'bias', bn_module.bias)
-                bn_new.to(bn_module.weight.device)
-                bn_new.eval() if not module.training else bn_new.train()
-
-                bns.append(bn_new)
-            attributes = {
-                'forward': cls.forward.__get__(module),
-                'canonizer_sum': Sum(),
-                'act1': module.bn1.act,
-                'act2': module.bn2.act,
-                'conv_exp_': copy.deepcopy(module.conv_exp),
-                'bn1_': bns[0],
-                'conv_pwl_': copy.deepcopy(module.conv_pwl),
-                'bn2_': bns[1],
-            }
-            return attributes
-        return None
-
-    @staticmethod
-    def forward(self, x):
-        shortcut = x
-        x = self.conv_exp_(x)
-        x = self.bn1_(x)
-        x = self.act1(x)
-        x = self.se(x)
-        x = self.conv_pwl_(x)
-        x = self.bn2_(x)
-        x = self.act2(x)
-        if self.has_skip:
-            #x = self.drop_path(x) + shortcut
-            x = torch.stack([self.drop_path(x), shortcut], dim=-1)
-            x = self.canonizer_sum(x)
-
-        return x
-
-class EfficientNetV2Canonizer(CompositeCanonizer):
-    '''Canonizer for timm.models.efficientnet* type models. This applies SequentialMergeBatchNorm, as well as
-    add a Sum module to the building block modules and overload their forward method to use the Sum module instead of
-    simply adding two tensors, such that forward and backward hooks may be applied.'''
-    def __init__(self):
-        super().__init__((
-            EfficientNetInvertedResidual(),
-            EfficientNetEdgeResidual(),
-            EfficientNetConvBnAct(),
-            SequentialMergeBatchNorm(),
-            SECanonizer(),
         ))
