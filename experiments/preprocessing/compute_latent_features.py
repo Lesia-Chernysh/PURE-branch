@@ -17,7 +17,7 @@ from zennit.core import Composite
 from datasets import get_dataset
 from experiments import preprocessing
 from models import get_fn_model_loader
-from utils.helper import load_config, get_layer_names_model
+from utils.helper import get_layer_names_model, pad_neuron_references, validate_layer_name
 
 import yaml
 
@@ -28,7 +28,7 @@ def get_args():
     parser.add_argument('--config_file', type=str,
                         default="configs/imagenet/resnet101_timm.yaml")
     parser.add_argument('--split', type=str, default="test")
-    parser.add_argument('--layer_name', type=str, default="layer4.1.conv2")
+    parser.add_argument('--layer_name', type=str, default=None)
     return parser.parse_args()
 
 
@@ -63,7 +63,7 @@ def main(model_name,
 
     grad_composite = Composite()
 
-    layer_name = layer_name
+    layer_name = validate_layer_name(layer_name or layer_names[-1], layer_names)
     print(f"layer_name: {layer_name}")
     print(f"layer_names: {layer_names}")
     prev_layer = layer_names[layer_names.index(layer_name) - 1]
@@ -76,20 +76,25 @@ def main(model_name,
     max_activations = []
     mean_activations = []
     cond_relevances_1 = []
-    cond_relevances_2 = []
 
     for i, neuron in enumerate(tqdm(np.arange(0, num_neurons))):
 
         max_activations.append([])
         mean_activations.append([])
         cond_relevances_1.append([])
-        cond_relevances_2.append([])
 
         # TODO: solve the problem with sample mismatch in other way
         most_act_sample_ids = d_c_sorted[:, neuron]
+        out_of_range = most_act_sample_ids >= len(dataset)
+        if np.any(out_of_range):
+            invalid = most_act_sample_ids[out_of_range][:10].tolist()
+            raise ValueError(
+                f"CRP references for neuron {neuron} contain dataset indices outside "
+                f"the current {split!r} split (size {len(dataset)}), e.g. {invalid}. "
+                "Use CRP artifacts generated for the same dataset and split."
+            )
         most_act_sample_ids = most_act_sample_ids[
             (most_act_sample_ids >= 0)
-            & (most_act_sample_ids < len(dataset))
             ]
 
         dataset_subset = torch.utils.data.Subset(dataset, most_act_sample_ids.flatten())
@@ -118,9 +123,13 @@ def main(model_name,
         mean_activations[i] = torch.cat(mean_activations[i], dim=0)
         cond_relevances_1[i] = torch.cat(cond_relevances_1[i], dim=0)
 
-    max_activations = torch.cat(max_activations, dim=0)
-    mean_activations = torch.cat(mean_activations, dim=0)
-    cond_relevances_1 = torch.cat(cond_relevances_1, dim=0)
+    max_activations, max_act_lengths = pad_neuron_references(max_activations)
+    mean_activations, mean_act_lengths = pad_neuron_references(mean_activations)
+    cond_relevances_1, cond_rel_lengths = pad_neuron_references(cond_relevances_1)
+
+    if not torch.equal(max_act_lengths, cond_rel_lengths) or not torch.equal(
+            mean_act_lengths, cond_rel_lengths):
+        raise RuntimeError("Collected feature tensors have inconsistent reference counts.")
 
     path = f"results/global_features/{dataset_name}/{model_name}"
     os.makedirs(path, exist_ok=True)
@@ -129,6 +138,7 @@ def main(model_name,
         "max_act": max_activations,
         "mean_act": mean_activations,
         "cond_rel": cond_relevances_1,
+        "reference_lengths": cond_rel_lengths,
     },
         f"{path}/latent_features_{layer_name}_{split}.safetensors")
 
