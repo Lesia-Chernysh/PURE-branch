@@ -27,7 +27,8 @@ def get_args():
     parser = argparse.ArgumentParser(description='Compute relevances and activations')
     parser.add_argument('--config_file', type=str,
                         default="configs/imagenet/resnet101_timm.yaml")
-    parser.add_argument('--split', type=str, default="test")
+    parser.add_argument('--split', type=str, default=None,
+                        help="Process one split instead of all splits listed in the config.")
     parser.add_argument('--layer_name', type=str, default=None)
     return parser.parse_args()
 
@@ -158,7 +159,8 @@ if __name__ == "__main__":
     data_path = config.get('data_path', None)
     print(f"data_path: {data_path}")
     ckpt_path = config.get('ckpt_path', None)
-    split = args.split
-    layer_name = args.layer_name
+    splits = [args.split] if args.split else config.get('splits', ['test'])
+    layer_name = args.layer_name or config.get('layer_name')
 
-    main(model_name, ckpt_path, dataset_name, data_path, split, batch_size, layer_name)
+    for split in splits:
+        main(model_name, ckpt_path, dataset_name, data_path, split, batch_size, layer_name)
