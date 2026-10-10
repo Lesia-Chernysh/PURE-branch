@@ -1,6 +1,6 @@
 batch_size: 32
 ckpt_path: ''
-data_path: 'C:\\Users\\lvche\\.cache\\kagglehub\\datasets\\ifigotin\\imagenetmini-1000\\versions\\1\\imagenet-mini\\'
+data_path: "${DATASET_ROOT}"
 dataset_name: imagenet-mini
 device: cuda
 model_name: resnet50_transformers
