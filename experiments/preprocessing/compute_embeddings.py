@@ -16,10 +16,11 @@ from transformers import AutoModel, AutoImageProcessor, AutoProcessor, FlavaImag
 from zennit.core import Composite
 
 from datasets import get_dataset
-from models import get_fn_model_loader, get_canonizer
+from models import get_fn_model_loader, get_canonizer, get_composite
 from utils.helper import (CustomDataset, get_layer_names_model, load_config,
                           pad_neuron_references, validate_layer_name)
-from utils.lrp_composites import EpsilonPlusFlat
+#from utils.lrp_composites import EpsilonPlusFlat
+from zennit.composites import EpsilonPlusFlat
 from utils.render import crop_and_mask_images
 
 
@@ -65,7 +66,7 @@ def main(model_name,
     model_DINO.eval()
 
     canonizers = get_canonizer(model_name)
-    composite = EpsilonPlusFlat(canonizers)
+    composite = get_composite(model_name)
 
     layer_names = get_layer_names_model(model, model_name)
     layer_name = validate_layer_name(layer_name or layer_names[-1], layer_names)
