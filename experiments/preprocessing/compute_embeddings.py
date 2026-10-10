@@ -17,7 +17,8 @@ from zennit.core import Composite
 
 from datasets import get_dataset
 from models import get_fn_model_loader, get_canonizer
-from utils.helper import load_config, get_layer_names_model, CustomDataset
+from utils.helper import (CustomDataset, get_layer_names_model, load_config,
+                          pad_neuron_references, validate_layer_name)
 from utils.lrp_composites import EpsilonPlusFlat
 from utils.render import crop_and_mask_images
 
@@ -28,7 +29,7 @@ def get_args():
                         default="configs/imagenet/resnet101_timm.yaml"
                         )
     parser.add_argument('--split', type=str, default="test")
-    parser.add_argument('--layer_name', type=str, default="block_3")
+    parser.add_argument('--layer_name', type=str, default=None)
     return parser.parse_args()
 
 
@@ -65,6 +66,7 @@ def main(model_name,
     composite = EpsilonPlusFlat(canonizers)
 
     layer_names = get_layer_names_model(model, model_name)
+    layer_name = validate_layer_name(layer_name or layer_names[-1], layer_names)
     cc = ChannelConcept()
     layer_map = {layer: cc for layer in layer_names}
 
@@ -108,8 +110,10 @@ def main(model_name,
         CLIP[i] = torch.cat(CLIP[i], dim=0)
         DINO[i] = torch.cat(DINO[i], dim=0)
 
-    CLIP = torch.stack(CLIP)
-    DINO = torch.stack(DINO)
+    CLIP, clip_lengths = pad_neuron_references(CLIP)
+    DINO, dino_lengths = pad_neuron_references(DINO)
+    if not torch.equal(clip_lengths, dino_lengths):
+        raise RuntimeError("CLIP and DINO produced inconsistent reference counts.")
 
     path = f"results/global_features/{dataset_name}/{model_name}"
     os.makedirs(path, exist_ok=True)
@@ -117,6 +121,7 @@ def main(model_name,
     save_file({
         "CLIP": CLIP,
         "DINO": DINO,
+        "reference_lengths": clip_lengths,
     },
         f"{path}/latent_embeddings_{layer_name}_{split}.safetensors")
 
