@@ -1,5 +1,5 @@
 import torch
-from zennit.composites import SpecialFirstLayerMapComposite, LAYER_MAP_BASE, LayerMapComposite
+from zennit.composites import SpecialFirstLayerMapComposite, layer_map_base, LayerMapComposite
 from zennit.layer import Sum
 from zennit.rules import ZPlus, Epsilon, Flat, Gamma, Pass, EpsilonPlusFlat
 from zennit.types import Convolution, Linear
@@ -22,7 +22,7 @@ class EpsilonPlusFlat(SpecialFirstLayerMapComposite):
     layers and the epsilon rule for all other fully connected layers.
     '''
     def __init__(self, canonizers=None):
-        layer_map = LAYER_MAP_BASE + [
+        layer_map = layer_map_base + [
             (Convolution, ZPlus()),
             (torch.nn.Linear, Epsilon()),
         ]
@@ -36,7 +36,7 @@ class EpsilonComposite(SpecialFirstLayerMapComposite):
     '''An explicit composite using the epsilon rule for any layer.
     '''
     def __init__(self, canonizers=None):
-        layer_map = LAYER_MAP_BASE + [
+        layer_map = layer_map_base + [
             (Convolution, Epsilon()),
             (torch.nn.Linear, Epsilon()),
         ]
