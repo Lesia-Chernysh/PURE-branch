@@ -75,7 +75,7 @@ def main(model_name,
     crp_split = crp_split or split
     fname = f"{model_name}_{dataset_name}_{crp_split}"
     fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
-                              path=f"crp_files/{fname}", max_target="max", abs_norm=False)
+                              path=f"crp_files/{fname}", max_target="sum", abs_norm=True)
 
     d_c_sorted, a, rf_c_sorted = load_maximization(fv.ActMax.PATH, layer_name)
     num_neurons = d_c_sorted.shape[1]
