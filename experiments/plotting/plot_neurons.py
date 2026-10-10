@@ -37,7 +37,7 @@ def get_parser(fixed_arguments: List[str] = []):
                         default="1,2,3,4,5")
     parser.add_argument('--embeddings',
                         default="pure") # "pure", "CLIP", "activations"
-    parser.add_argument('--split', default="test")
+    parser.add_argument('--split', default=None)
     parser.add_argument('--layer_name', default=None)
     parser.add_argument('--num_clusters', default=2, type=int)
     parser.add_argument('--n_refimgs', default=20, type=int)
@@ -62,9 +62,13 @@ args = get_parser()
 model_name = args.model_name
 dataset_name = args.dataset_name
 
-SPLIT = args.split
+configured_splits = getattr(args, "splits", ["test"])
+if args.split is None and len(configured_splits) != 1:
+    raise ValueError("The config contains multiple splits; select one with --split.")
+SPLIT = args.split or configured_splits[0]
 
-fv_name = f"crp_files/{model_name}_{dataset_name}_{SPLIT}"
+crp_split = getattr(args, "crp_split", None) or SPLIT
+fv_name = f"crp_files/{model_name}_{dataset_name}_{crp_split}"
 batch_size = 100
 n_refimgs = args.n_refimgs
 mode = "activation"
