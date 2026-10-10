@@ -1,6 +1,6 @@
 torch==1.13.1
 torchvision==0.14.1
-zennit-crp
+zennit-crp==0.4.7
 pytorch-lightning
 pandas
 opencv-python
