@@ -19,7 +19,7 @@ from datasets import get_dataset
 from models import get_fn_model_loader, get_canonizer, get_composite
 from utils.helper import (CustomDataset, get_layer_names_model, load_config,
                           pad_neuron_references, validate_layer_name)
-#from utils.lrp_composites import EpsilonPlusFlat
+#from utils.lrp_composites import EpsilonPlusFlat, ReferenceEpsilonPlusFlat
 from zennit.composites import EpsilonPlusFlat
 from utils.render import crop_and_mask_images
 
@@ -65,12 +65,19 @@ def main(model_name,
     model_CLIP.eval()
     model_DINO.eval()
 
-    print(type(model_name), model_name)
-    canonizers = get_canonizer(model_name)
-    composite = get_composite(model_name)
-
     layer_names = get_layer_names_model(model, model_name)
     layer_name = validate_layer_name(layer_name or layer_names[-1], layer_names)
+
+    canonizers = get_canonizer(model_name)
+           
+    if model_name == "resnet50_transformers":
+      composite = ReferenceEpsilonPlusFlat(
+            canonizers=canonizers,
+            skip_layer=layer_name,
+            epsilon=1e-6,
+            zero_params=["bias"],
+        )
+      
     cc = ChannelConcept()
     layer_map = {layer: cc for layer in layer_names}
 
