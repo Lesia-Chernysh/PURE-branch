@@ -137,7 +137,7 @@ if __name__ == "__main__":
     args = get_args()
 
     #config = load_config(args.config_file)
-    with open(config_file, encoding="utf-8") as file:
+    with open(args.config_file, encoding="utf-8") as file:
         config_text = os.path.expandvars(file.read())
     
     config = yaml.safe_load(config_text)
