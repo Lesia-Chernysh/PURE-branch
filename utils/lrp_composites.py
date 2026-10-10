@@ -1,7 +1,7 @@
 import torch
-from zennit.composites import SpecialFirstLayerMapComposite, layer_map_base, LayerMapComposite
+from zennit.composites import SpecialFirstLayerMapComposite, layer_map_base, LayerMapComposite, EpsilonPlusFlat
 from zennit.layer import Sum
-from zennit.rules import ZPlus, Epsilon, Flat, Gamma, Pass, EpsilonPlusFlat
+from zennit.rules import ZPlus, Epsilon, Flat, Gamma, Pass
 from zennit.types import Convolution, Linear
 
 class ReferenceEpsilonPlusFlat(EpsilonPlusFlat):
