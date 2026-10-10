@@ -49,7 +49,9 @@ class ImageNetMiniDataset(Dataset):
     _SPLIT_DIRS = {
         "train": "train",
         "val": "val",
-        "validation": "val"
+        "validation": "val",
+        "all": ("train", "val"),
+        "train+val": ("train", "val"),
     }
 
     def __init__(
@@ -69,19 +71,28 @@ class ImageNetMiniDataset(Dataset):
         self.root = Path(root).expanduser().resolve()
         print(self.root)
         self.split = split
-        self.split_root = self.root / self._SPLIT_DIRS[split]
+        split_dirs = self._SPLIT_DIRS[split]
+        if isinstance(split_dirs, str):
+            split_dirs = (split_dirs,)
+        self.split_roots = [self.root / directory for directory in split_dirs]
+        self.split_root = self.split_roots[0] if len(self.split_roots) == 1 else self.root
         self.transform = transform
         self.transforms = transform  # compatibility with the original adapter
         self.preprocessing = None
 
-        if not self.split_root.is_dir():
-            raise FileNotFoundError(f"Image split directory not found: {self.split_root}")
+        for split_root in self.split_roots:
+            if not split_root.is_dir():
+                raise FileNotFoundError(f"Image split directory not found: {split_root}")
 
         # ImageFolder is used only for deterministic image discovery/loading.
         # Its folder-derived labels are deliberately discarded below.
-        discovered = ImageFolder(self.split_root)
-        self.loader = discovered.loader
-        self.samples = [(path, 0) for path, _ in discovered.samples]
+        discovered_splits = [ImageFolder(split_root) for split_root in self.split_roots]
+        self.loader = discovered_splits[0].loader
+        self.samples = [
+            (path, 0)
+            for discovered in discovered_splits
+            for path, _ in discovered.samples
+        ]
         self.imgs = self.samples
 
         # labels for the dataset where predicted by ResNet50
@@ -99,8 +110,19 @@ class ImageNetMiniDataset(Dataset):
             ):
                 raise TypeError("The .pt file must contain a tensor or list of labels.")
 
+        # The labels file and combined CRP artifacts use train followed by val.
+        label_offset = 0
+        if split in {"val", "validation"}:
+            train_root = self.root / "train"
+            if not train_root.is_dir():
+                raise FileNotFoundError(
+                    f"Train directory is required to determine validation label offset: {train_root}"
+                )
+            label_offset = len(ImageFolder(train_root).samples)
+        available_labels = predicted_labels[label_offset:label_offset + len(self.samples)]
+
         self.dataset_labels: dict[int, int] = {}
-        for index, label in enumerate(predicted_labels):
+        for index, label in enumerate(available_labels):
             self.dataset_labels[index] = int(label)
 
         if len(self.dataset_labels) != len(self.samples):
@@ -109,7 +131,7 @@ class ImageNetMiniDataset(Dataset):
                 f"file contains {len(self.dataset_labels)} labels."
             )'''
             print(f"Found {len(self.samples)} images in {self.split_root}, but the label "
-                f"file contains {len(self.dataset_labels)} labels. Reducing the number of samples")
+                f"file contains {len(self.dataset_labels)} matching labels. Reducing the number of samples")
             self.samples = self.samples[:len(self.dataset_labels)]
 
         if any(label < 0 or label >= 1000 for label in self.dataset_labels.values()):
