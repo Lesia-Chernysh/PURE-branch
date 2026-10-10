@@ -39,7 +39,8 @@ def main(model_name,
          dataset_name,
          data_path,
          split,
-         layer_name):
+         layer_name,
+         crp_split=None):
 
     NREF = 100
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -71,7 +72,8 @@ def main(model_name,
     cc = ChannelConcept()
     layer_map = {layer: cc for layer in layer_names}
 
-    fname = f"{model_name}_{dataset_name}_{split}"
+    crp_split = crp_split or split
+    fname = f"{model_name}_{dataset_name}_{crp_split}"
     fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
                               path=f"crp_files/{fname}", max_target="max", abs_norm=False)
 
@@ -138,6 +140,8 @@ if __name__ == "__main__":
     data_path = config.get('data_path', None)
     ckpt_path = config.get('ckpt_path', None)
     splits = [args.split] if args.split else config.get('splits', ['test'])
+    crp_split = config.get('crp_split')
 
     for split in splits:
-        main(model_name, ckpt_path, dataset_name, data_path, split, layer_name)
+        main(model_name, ckpt_path, dataset_name, data_path, split, layer_name,
+             crp_split=crp_split)
