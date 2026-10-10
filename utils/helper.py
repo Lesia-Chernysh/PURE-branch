@@ -2,6 +2,7 @@ import os
 
 import torch
 import yaml
+from torch.nn.utils.rnn import pad_sequence
 from crp.helper import get_layer_names
 from typing import List
 from transformers import AutoProcessor
@@ -37,6 +38,50 @@ def get_layer_names_model(model: torch.nn.Module, model_name: str) -> List[str]:
     else:
         raise NotImplementedError
     return layer_names
+
+
+def validate_layer_name(layer_name: str, layer_names: List[str]) -> str:
+    """Validate a requested layer and return it with a useful error on mismatch."""
+    if layer_name not in layer_names:
+        available = ", ".join(layer_names)
+        raise ValueError(
+            f"Unknown layer {layer_name!r}. Available inspection layers: {available}"
+        )
+    if layer_names.index(layer_name) == 0:
+        raise ValueError(
+            f"Layer {layer_name!r} has no preceding inspection layer for PURE."
+        )
+    return layer_name
+
+
+def pad_neuron_references(tensors: List[torch.Tensor]):
+    """Pad ragged per-neuron reference tensors without losing the neuron axis."""
+    if not tensors:
+        raise ValueError("No per-neuron tensors were collected.")
+    lengths = torch.tensor([tensor.shape[0] for tensor in tensors], dtype=torch.long)
+    if torch.any(lengths == 0):
+        empty = torch.where(lengths == 0)[0].tolist()
+        raise ValueError(f"No valid reference samples for neurons: {empty}")
+    return pad_sequence(tensors, batch_first=True, padding_value=0.0), lengths
+
+
+def reference_lengths(tensors, tensor_key: str) -> torch.Tensor:
+    """Read valid reference lengths, with compatibility for old dense artifacts."""
+    key = f"{tensor_key}_lengths"
+    tensor = tensors[tensor_key]
+    if key in tensors:
+        lengths = tensors[key].to(dtype=torch.long)
+    elif "reference_lengths" in tensors:
+        lengths = tensors["reference_lengths"].to(dtype=torch.long)
+    else:
+        lengths = torch.full((tensor.shape[0],), tensor.shape[1], dtype=torch.long)
+    if lengths.shape != (tensor.shape[0],):
+        raise ValueError(
+            f"{key} must have shape ({tensor.shape[0]},), got {tuple(lengths.shape)}"
+        )
+    if torch.any(lengths < 0) or torch.any(lengths > tensor.shape[1]):
+        raise ValueError(f"Invalid reference lengths for {tensor_key!r}.")
+    return lengths
 
 
 class InspectionLayer(torch.nn.Module):
