@@ -23,7 +23,8 @@ from zennit.core import Composite
 
 from datasets import get_dataset
 from models import get_canonizer, get_fn_model_loader
-from utils.helper import get_layer_names_model, CustomDataset
+from utils.helper import (CustomDataset, get_layer_names_model, reference_lengths,
+                          validate_layer_name)
 from utils.render import vis_opaque_img_border, crop_and_adjust_images, crop_and_mask_images
 import torch
 import numpy as np
@@ -37,8 +38,10 @@ def get_parser(fixed_arguments: List[str] = []):
 
     parser.add_argument('--config_file',
                         default="configs/imagenet/resnet101_timm.yaml")
-    parser.add_argument('--layer_name', default="block_3", type=str)
+    parser.add_argument('--layer_name', default=None, type=str)
     parser.add_argument('--num_clusters', default=2, type=int)
+    parser.add_argument('--split', default="test")
+    parser.add_argument('--n_refimgs', default=100, type=int)
     args = parser.parse_args()
 
     with open(parser.parse_args().config_file, "r") as stream:
@@ -60,10 +63,10 @@ args = get_parser()
 model_name = args.model_name
 dataset_name = args.dataset_name
 
-SPLIT = "test"
+SPLIT = args.split
 fv_name = f"crp_files/{model_name}_{dataset_name}_{SPLIT}"
 batch_size = 50
-n_refimgs = 100
+n_refimgs = args.n_refimgs
 mode = "activation"
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -101,16 +104,13 @@ layer_names = get_layer_names_model(model, model_name)
 layer_map = {layer: cc for layer in layer_names}
 
 print(layer_names)
-layer_name = args.layer_name
+layer_name = args.layer_name or layer_names[-1]
+layer_name = validate_layer_name(layer_name, layer_names)
 
 attribution = CondAttribution(model)
 
 fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
                           path=fv_name, max_target="max", abs_norm=False)
-
-if not os.listdir(fv.RelMax.PATH):
-    fv.run(composite, 0, len(dataset), batch_size=batch_size)
-
 
 tensors = {}
 path = f"results/global_features/{dataset_name}/{model_name}"
@@ -120,6 +120,8 @@ with safe_open(f"{path}/latent_embeddings_{layer_name}_{SPLIT}.safetensors", fra
 
 CLIP_embeddings = tensors["CLIP"]
 DINO_embeddings = tensors["DINO"]
+clip_lengths = reference_lengths(tensors, "CLIP")
+dino_lengths = reference_lengths(tensors, "DINO")
 
 tensors = {}
 path = f"results/global_features/{dataset_name}/{model_name}"
@@ -127,30 +129,27 @@ with safe_open(f"{path}/latent_features_{layer_name}_{SPLIT}.safetensors", frame
    for key in f.keys():
        tensors[key] = f.get_tensor(key)
 
-N = CLIP_embeddings.shape[0]
+cond_rel_lengths = reference_lengths(tensors, "cond_rel")
+mean_act_lengths = reference_lengths(tensors, "mean_act")
 
-random_indices = np.random.choice(len(tensors["cond_rel"]), N, replace=False)
-neuron_indices = torch.arange(len(tensors["cond_rel"]))[random_indices]
-# random_indices = torch.arange(len(tensors["cond_rel"]))
-# neuron_indices = torch.arange(len(tensors["cond_rel"]))
+num_neurons = min(
+    CLIP_embeddings.shape[0], DINO_embeddings.shape[0],
+    tensors["cond_rel"].shape[0], tensors["mean_act"].shape[0]
+)
+if len({CLIP_embeddings.shape[0], DINO_embeddings.shape[0],
+        tensors["cond_rel"].shape[0], tensors["mean_act"].shape[0]}) != 1:
+    raise ValueError("Feature and embedding artifacts contain different neuron counts.")
+
 n_clusters = args.num_clusters
-
-cond_attributions = tensors["cond_rel"][random_indices][:, :n_refimgs]
-clusters = [KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(attr) for attr in cond_attributions]
-# counts = [torch.from_numpy(np.unique(c.labels_, return_counts=True)[1]) for c in clusters]
-# counts = torch.stack([c if (len(c) == n_clusters) else torch.zeros(n_clusters) for c in counts], dim=0)
-# filt_rel = counts.amin(1) > 10
-
-act_attributions = tensors["mean_act"][random_indices][:, :n_refimgs]
-act_clusters = [KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(attr) for attr in act_attributions]
-# counts = [torch.from_numpy(np.unique(c.labels_, return_counts=True)[1]) for c in act_clusters]
-# counts = torch.stack([c if (len(c) == n_clusters) else torch.zeros(n_clusters) for c in counts], dim=0)
-# filt = ((counts.amin(1) > 10)*1 + filt_rel*1) >= 1
-
-
-# neuron_indices = neuron_indices[filt].detach().cpu().numpy().tolist()
-# cond_attributions = cond_attributions[filt]
-# act_attributions = act_attributions[filt]
+valid_lengths = torch.minimum(
+    torch.minimum(cond_rel_lengths, mean_act_lengths),
+    torch.minimum(clip_lengths, dino_lengths),
+).clamp(max=n_refimgs)
+neuron_indices = torch.where(valid_lengths >= n_clusters)[0]
+if len(neuron_indices) == 0:
+    raise ValueError(
+        f"No neurons have at least {n_clusters} references shared across all artifacts."
+    )
 
 inner_rel = []
 inter_rel = []
@@ -182,6 +181,14 @@ def compute_distances(CLIP_distances, labels):
 
 for i, neuron in enumerate(neuron_indices):
     print(f"Neuron {neuron} / {i}")
+    neuron = int(neuron)
+    n_valid = int(valid_lengths[neuron])
+    cond_attribution = tensors["cond_rel"][neuron, :n_valid]
+    act_attribution = tensors["mean_act"][neuron, :n_valid]
+    clip_embedding = CLIP_embeddings[neuron, :n_valid]
+    dino_embedding = DINO_embeddings[neuron, :n_valid]
+    cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(cond_attribution)
+    act_cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(act_attribution)
     # ref_imgs = fv.get_max_reference([neuron], layer_name, mode, (0, 50),
     #                                 composite=composite, rf=True, batch_size=n_refimgs, plot_fn=crop_and_mask_images)[neuron]
     #
@@ -204,23 +211,23 @@ for i, neuron in enumerate(neuron_indices):
     #     DINO_embeddings.append(model_DINO(inputs).last_hidden_state.mean(1).detach().cpu())
 
     # CLIP_embeddings = torch.cat(CLIP_embeddings, dim=0)
-    CLIP_cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(CLIP_embeddings[neuron])
-    distances = torch.norm(CLIP_embeddings[neuron][None] - CLIP_embeddings[neuron][:, None], dim=2)
+    CLIP_cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(clip_embedding)
+    distances = torch.norm(clip_embedding[None] - clip_embedding[:, None], dim=2)
     # CLIP_cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(CLIP_embeddings)
     # distances = torch.norm(CLIP_embeddings[None] - CLIP_embeddings[:, None], dim=2)
 
 #     DINO_embeddings = torch.cat(DINO_embeddings, dim=0)
-    DINO_cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(DINO_embeddings[neuron])
+    DINO_cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(dino_embedding)
     # DINO_cluster = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(DINO_embeddings)
 
-    inner_distances, inter_distances = compute_distances(distances, clusters[i].labels_)
+    inner_distances, inter_distances = compute_distances(distances, cluster.labels_)
     print(f"REL Mean distance inside clusters: {np.mean(inner_distances)}")
     print(f"REL Mean distance inbetween clusters: {np.mean(inter_distances)}")
     inner_rel.append(inner_distances)
     inter_rel.append(inter_distances)
     overall_.append(distances.sum().item() / (distances.shape[-1]**2 - distances.shape[-1] + 1e-8))
 
-    inner_distances, inter_distances = compute_distances(distances, act_clusters[i].labels_)
+    inner_distances, inter_distances = compute_distances(distances, act_cluster.labels_)
     print(f"ACT Mean distance inside clusters: {np.mean(inner_distances)}")
     print(f"ACT Mean distance inbetween clusters: {np.mean(inter_distances)}")
     inner_act.append(inner_distances)
@@ -255,20 +262,21 @@ vals_full = {
     "DINO": [inner_dino, inter_dino],
     "overall": overall_,
     "neuron_indices": neuron_indices,
+    "reference_lengths": valid_lengths[neuron_indices],
 }
 
 os.makedirs(f"results/interpretability/{dataset_name}/{model_name}", exist_ok=True)
 torch.save(vals_full, f"results/interpretability/{dataset_name}/{model_name}/interpretability_{n_clusters}clusters_{layer_name}_{SPLIT}.pt")
 
 vals = {
-    "CLIP": [np.mean(inner_CLIP), np.mean(inter_CLIP), np.std(inner_CLIP) / len(inner_CLIP),
-             np.std(inter_CLIP) / len(inter_CLIP)],
-    "PURE": [np.mean(inner_rel), np.mean(inter_rel), np.std(inner_rel) / len(inner_rel),
-             np.std(inter_rel) / len(inter_rel)],
-    "Activation": [np.mean(inner_act), np.mean(inter_act), np.std(inner_act) / len(inner_act),
-                   np.std(inter_act) / len(inter_act)],
-    "DINO": [np.mean(inner_dino), np.mean(inter_dino), np.std(inner_dino) / len(inner_dino),
-                   np.std(inter_dino) / len(inter_dino)],
+    "CLIP": [np.mean(inner_CLIP), np.mean(inter_CLIP), np.std(inner_CLIP) / np.sqrt(len(inner_CLIP)),
+             np.std(inter_CLIP) / np.sqrt(len(inter_CLIP))],
+    "PURE": [np.mean(inner_rel), np.mean(inter_rel), np.std(inner_rel) / np.sqrt(len(inner_rel)),
+             np.std(inter_rel) / np.sqrt(len(inter_rel))],
+    "Activation": [np.mean(inner_act), np.mean(inter_act), np.std(inner_act) / np.sqrt(len(inner_act)),
+                   np.std(inter_act) / np.sqrt(len(inter_act))],
+    "DINO": [np.mean(inner_dino), np.mean(inter_dino), np.std(inner_dino) / np.sqrt(len(inner_dino)),
+                   np.std(inter_dino) / np.sqrt(len(inter_dino))],
 }
 
 plt.rcParams['text.usetex'] = False
@@ -281,8 +289,8 @@ overall = np.mean(overall_)
 plt.bar(x, height=[vals[m][1] for m in x], label="inter", color="#E33FDD")
 plt.bar(x, height=[vals[m][0] for m in x], label="inner", color="#0094FF")
 for i, m in enumerate(x):
-    plt.text(i, vals[m][0], f"${vals[m][0]:.2f}\pm{vals[m][2]:.2f}$", ha="center", va="bottom")
-    plt.text(i, vals[m][1], f"${vals[m][1]:.2f}\pm{vals[m][3]:.2f}$", ha="center", va="bottom")
+    plt.text(i, vals[m][0], f"${vals[m][0]:.2f}\\pm{vals[m][2]:.2f}$", ha="center", va="bottom")
+    plt.text(i, vals[m][1], f"${vals[m][1]:.2f}\\pm{vals[m][3]:.2f}$", ha="center", va="bottom")
     # plt.text(i, vals[m][0], f"{vals[m][0]:.2f}", ha="center", va="bottom")
 
 plt.legend(loc="lower right")
