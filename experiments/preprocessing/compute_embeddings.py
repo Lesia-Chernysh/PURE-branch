@@ -65,6 +65,7 @@ def main(model_name,
     model_CLIP.eval()
     model_DINO.eval()
 
+    print(type(model_name), model_name)
     canonizers = get_canonizer(model_name)
     composite = get_composite(model_name)
 
