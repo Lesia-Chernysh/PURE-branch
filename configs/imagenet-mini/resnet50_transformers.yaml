@@ -4,5 +4,9 @@ data_path: "${DATASET_ROOT}"
 dataset_name: imagenet-mini
 device: cuda
 model_name: resnet50_transformers
+layer_name: layer4.1.conv2
+splits:
+  - train
+  - val
 wandb_api_key: ''
 wandb_project_name: ''
