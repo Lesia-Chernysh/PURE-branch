@@ -27,7 +27,7 @@ def get_canonizer(model_name):
 
 def get_composite(model_name):
     assert model_name in list(COMPOSITES.keys()), f"No composite for model '{model_name}' available"
-    return [COMPOSITES[model_name]()]
+    return COMPOSITES[model_name]()
     
 
 def get_fn_model_loader(model_name: str) -> torch.nn.Module:
