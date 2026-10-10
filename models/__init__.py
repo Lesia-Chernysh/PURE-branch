@@ -1,7 +1,7 @@
 import torch
 from models.timm_resnet import get_resnet_timm, get_resnet50_timm, get_resnet34_timm, get_resnet101_timm, \
     get_resnet_canonizer
-from models.resnet50_transformers import get_resnet50, get_resnet50_canonizer
+from models.resnet50_transformers import get_resnet50, get_resnet50_canonizer, get_resnet50_composite
 
 MODELS = {
     "resnet50_timm": get_resnet50_timm,
