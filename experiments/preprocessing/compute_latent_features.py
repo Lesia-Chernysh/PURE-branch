@@ -19,6 +19,8 @@ from experiments import preprocessing
 from models import get_fn_model_loader
 from utils.helper import load_config, get_layer_names_model
 
+import yaml
+
 
 
 def get_args():
@@ -134,7 +136,11 @@ def main(model_name,
 if __name__ == "__main__":
     args = get_args()
 
-    config = load_config(args.config_file)
+    #config = load_config(args.config_file)
+    with open(config_file, encoding="utf-8") as file:
+        config_text = os.path.expandvars(file.read())
+    
+    config = yaml.safe_load(config_text)
 
     model_name = config['model_name']
     dataset_name = config['dataset_name']
