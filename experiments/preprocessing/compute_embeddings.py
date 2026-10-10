@@ -20,6 +20,7 @@ from models import get_fn_model_loader, get_canonizer, get_composite
 from utils.helper import (CustomDataset, get_layer_names_model, load_config,
                           pad_neuron_references, validate_layer_name)
 #from utils.lrp_composites import EpsilonPlusFlat, ReferenceEpsilonPlusFlat
+from utils.lrp_composites import ReferenceEpsilonPlusFlat
 from zennit.composites import EpsilonPlusFlat
 from utils.render import crop_and_mask_images
 
