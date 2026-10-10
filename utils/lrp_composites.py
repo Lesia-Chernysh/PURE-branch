@@ -1,9 +1,21 @@
 import torch
 from zennit.composites import SpecialFirstLayerMapComposite, LAYER_MAP_BASE, LayerMapComposite
 from zennit.layer import Sum
-from zennit.rules import ZPlus, Epsilon, Flat, Gamma, Pass
+from zennit.rules import ZPlus, Epsilon, Flat, Gamma, Pass, EpsilonPlusFlat
 from zennit.types import Convolution, Linear
 
+class ReferenceEpsilonPlusFlat(EpsilonPlusFlat):
+    """
+    For ResNet-50
+    """
+    def __init__(self, skip_layer, **kwargs):
+        super().__init__(**kwargs)
+        self.skip_layer = skip_layer
+
+    def mapping(self, ctx, name, module):
+        if name == self.skip_layer:
+            return None
+        return super().mapping(ctx, name, module)
 
 class EpsilonPlusFlat(SpecialFirstLayerMapComposite):
     '''An explicit composite using the flat rule for any linear first layer, the zplus rule for all other convolutional
