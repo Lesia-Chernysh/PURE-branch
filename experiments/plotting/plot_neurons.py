@@ -19,7 +19,7 @@ from zennit.composites import EpsilonPlusFlat
 
 from datasets import get_dataset
 from models import get_canonizer, get_fn_model_loader
-from utils.helper import get_layer_names_model
+from utils.helper import get_layer_names_model, reference_lengths, validate_layer_name
 from utils.render import vis_opaque_img_border
 import torch
 import numpy as np
@@ -37,6 +37,10 @@ def get_parser(fixed_arguments: List[str] = []):
                         default="1,2,3,4,5")
     parser.add_argument('--embeddings',
                         default="pure") # "pure", "CLIP", "activations"
+    parser.add_argument('--split', default="test")
+    parser.add_argument('--layer_name', default=None)
+    parser.add_argument('--num_clusters', default=2, type=int)
+    parser.add_argument('--n_refimgs', default=20, type=int)
     args = parser.parse_args()
 
     with open(parser.parse_args().config_file, "r") as stream:
@@ -58,11 +62,11 @@ args = get_parser()
 model_name = args.model_name
 dataset_name = args.dataset_name
 
-SPLIT = "test"
+SPLIT = args.split
 
 fv_name = f"crp_files/{model_name}_{dataset_name}_{SPLIT}"
 batch_size = 100
-n_refimgs = 20
+n_refimgs = args.n_refimgs
 mode = "activation"
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -80,15 +84,19 @@ layer_names = get_layer_names_model(model, model_name)
 layer_map = {layer: cc for layer in layer_names}
 
 print(layer_names)
-layer_name = layer_names[-1]
+layer_name = args.layer_name or layer_names[-1]
+layer_name = validate_layer_name(layer_name, layer_names)
 
 attribution = CondAttribution(model)
 
 fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
                           path=fv_name, max_target="max", abs_norm=False)
 
-if not os.listdir(fv.RelMax.PATH):
-    fv.run(composite, 0, len(dataset), batch_size=batch_size)
+if not os.path.isdir(fv.RelMax.PATH) or not os.listdir(fv.RelMax.PATH):
+    raise FileNotFoundError(
+        f"No CRP artifacts found at {fv.RelMax.PATH}. Run crp_run for the "
+        f"same dataset and split ({SPLIT!r}) before plotting."
+    )
 
 
 d_c_sorted, a, rf_c_sorted = load_maximization(fv.ActMax.PATH, layer_name)
@@ -102,33 +110,49 @@ if args.embeddings == "pure":
        for key in f.keys():
            tensors[key] = f.get_tensor(key)
     embeddings = tensors["cond_rel"][:, :n_refimgs]
+    lengths = reference_lengths(tensors, "cond_rel")
 elif args.embeddings == "CLIP":
     with safe_open(f"{path}/latent_embeddings_{layer_name}_{SPLIT}.safetensors", framework="pt", device="cpu") as f:
         for key in f.keys():
             tensors[key] = f.get_tensor(key)
     embeddings = tensors["CLIP"][:, :n_refimgs]
+    lengths = reference_lengths(tensors, "CLIP")
 elif args.embeddings == "activations":
     with safe_open(f"{path}/latent_features_{layer_name}_{SPLIT}.safetensors", framework="pt", device="cpu") as f:
         for key in f.keys():
             tensors[key] = f.get_tensor(key)
     embeddings = tensors["mean_act"][:, :n_refimgs]
+    lengths = reference_lengths(tensors, "mean_act")
+else:
+    raise ValueError("--embeddings must be one of: pure, CLIP, activations")
 
 
-n_clusters = 2
+n_clusters = args.num_clusters
 
 neurons = torch.tensor([int(i) for i in args.neurons.split(",")])
 
 for inds_ in [neurons]:
     fig, axs = plt.subplots(2 + n_clusters, len(neurons), dpi=300, figsize=(len(neurons) * 4/1.3, 6/1.4),
-                            gridspec_kw={'height_ratios': [len(neurons), 1, *np.ones(n_clusters).tolist()]},)
+                            gridspec_kw={'height_ratios': [len(neurons), 1, *np.ones(n_clusters).tolist()]},
+                            squeeze=False)
     for i, inds in enumerate(inds_):
         print(i)
-        ref_imgs = fv.get_max_reference([inds.item()], layer_name, mode, (0, n_refimgs),
-                                        composite=composite, rf=True, batch_size=n_refimgs,
+        neuron = inds.item()
+        if neuron < 0 or neuron >= embeddings.shape[0]:
+            raise IndexError(f"Neuron {neuron} is outside [0, {embeddings.shape[0] - 1}].")
+        n_valid = min(int(lengths[neuron]), n_refimgs)
+        if n_valid < max(n_clusters, 3):
+            raise ValueError(
+                f"Neuron {neuron} has only {n_valid} valid references; "
+                f"need at least {max(n_clusters, 3)}."
+            )
+        neuron_embeddings = embeddings[neuron, :n_valid]
+        ref_imgs = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid),
+                                        composite=composite, rf=True, batch_size=n_valid,
                                         plot_fn=vis_opaque_img_border)
 
-        embedding = umap.UMAP(n_neighbors=6, min_dist=0.3, spread=1.0)
-        X = embedding.fit_transform(embeddings[inds])
+        embedding = umap.UMAP(n_neighbors=min(6, n_valid - 1), min_dist=0.3, spread=1.0)
+        X = embedding.fit_transform(neuron_embeddings)
         x, y = X[:, 0], X[:, 1]
         xmin = x.min() - 0.2 * (x.max() - x.min())
         xmax = x.max() + 0.2 * (x.max() - x.min())
@@ -142,7 +166,7 @@ for inds_ in [neurons]:
         axs[0][i].contour(Z, extent=[xmin, xmax, ymin, ymax], cmap="Greys", alpha=0.3, extend='min', vmax=Z.max() * 1, zorder=0)
         axs[0][i].scatter(x, y, alpha=0.7, c="black", s=10)
 
-        for j, img_ in enumerate(ref_imgs[inds.item()]):
+        for j, img_ in enumerate(ref_imgs[neuron][:n_valid]):
             imagebox = OffsetImage(img_.resize((100, 100)), zoom=0.15)
             ab = AnnotationBbox(imagebox, (x[j], y[j]), frameon=True, pad=0)
             axs[0][i].add_artist(ab)
@@ -154,7 +178,7 @@ for inds_ in [neurons]:
         resize = torchvision.transforms.Resize((150, 150))
 
         NUM = 8
-        ref_imgs_ = ref_imgs[inds.item()]
+        ref_imgs_ = ref_imgs[neuron][:n_valid]
         grid = make_grid(
             [resize(torch.from_numpy(np.asarray(k)).permute((2, 0, 1))) for k in ref_imgs_[:NUM]],
             nrow=NUM,
@@ -167,7 +191,7 @@ for inds_ in [neurons]:
 
 
 
-        cluster = KMeans(n_clusters=n_clusters, n_init=20, random_state=123).fit(embeddings[inds])
+        cluster = KMeans(n_clusters=n_clusters, n_init=20, random_state=123).fit(neuron_embeddings)
         labels = np.array(cluster.labels_)
         for lab in np.unique(labels):
             ref_imgs_cluster = [r for k, r in enumerate(ref_imgs_) if labels[k] == lab]
