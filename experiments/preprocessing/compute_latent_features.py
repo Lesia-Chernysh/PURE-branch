@@ -118,9 +118,9 @@ def main(model_name,
         mean_activations[i] = torch.cat(mean_activations[i], dim=0)
         cond_relevances_1[i] = torch.cat(cond_relevances_1[i], dim=0)
 
-    max_activations = torch.stack(max_activations)
-    mean_activations = torch.stack(mean_activations)
-    cond_relevances_1 = torch.stack(cond_relevances_1)
+    max_activations = torch.cat(max_activations, dim=0)
+    mean_activations = torch.cat(mean_activations, dim=0)
+    cond_relevances_1 = torch.cat(cond_relevances_1, dim=0)
 
     path = f"results/global_features/{dataset_name}/{model_name}"
     os.makedirs(path, exist_ok=True)
