@@ -209,6 +209,7 @@ for inds_ in [neurons]:
 
         cluster = KMeans(n_clusters=n_clusters, n_init=20, random_state=123).fit(neuron_embeddings)
         labels = np.array(cluster.labels_)
+        print(labels)
 
         virtual_neurons = {neuron: []} 
       
