@@ -31,7 +31,7 @@ def get_args():
     parser.add_argument('--config_file', type=str,
                         default="configs/imagenet/resnet101_timm.yaml"
                         )
-    parser.add_argument('--split', type=str, default=None,
+    parser.add_argument('--split', type=str, default="all",
                         help="Process one split instead of all splits listed in the config.")
     parser.add_argument('--layer_name', type=str, default=None)
     return parser.parse_args()
