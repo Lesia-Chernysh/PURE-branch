@@ -226,12 +226,13 @@ for inds_ in [neurons]:
             axs[2 + lab][i].set_yticks([])
             axs[2 + lab][i].set_ylabel(f"{lab + 1}") if i == 0 else None
 
-    plt.tight_layout()
+        print(virtual_neurons[neuron])
+        save_file({
+            neuron: virtual_neurons[neuron],
+        },
+            f"{path}/virtual_neurons_{layer_name}_{neuron}.safetensors")
 
-    save_file({
-        neuron: virtual_neurons[neuron],
-    },
-        f"{path}/virtual_neurons_{layer_name}_{neuron}.safetensors")
+    plt.tight_layout()
 
     path = f"results/neuron_plots/{dataset_name}/{model_name}"
     os.makedirs(path, exist_ok=True)
