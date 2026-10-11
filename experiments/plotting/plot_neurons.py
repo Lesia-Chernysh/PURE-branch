@@ -247,7 +247,7 @@ for inds_ in [neurons]:
             for row in virtual_neurons[neuron]
         ]
 
-        path = f"results/virtual_neurons/{dataset_name}/{model_name}"
+        path = f"results/virtual_neurons/{dataset_name}/{model_name}{layer_name}"
         os.makedirs(path, exist_ok=True)
         
         np.savez_compressed(
