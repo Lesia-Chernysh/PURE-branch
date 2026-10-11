@@ -43,6 +43,13 @@ def get_layer_names_model(model: torch.nn.Module, model_name: str) -> List[str]:
         ]
     elif "resnet" in model_name:
         layer_names = get_layer_names(model, [InspectionLayer])
+    elif model_name == "vgg16":
+        layer_names = [
+            name 
+            for name, module in model.named_modules()
+            if isinstance(module, torch.nn.Conv2d)
+            and "head" not in name
+        ]
     else:
         raise NotImplementedError
     return layer_names
