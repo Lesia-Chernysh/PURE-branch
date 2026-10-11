@@ -172,7 +172,7 @@ for inds_ in [neurons]:
         os.makedirs(output_dir, exist_ok=True)
       
         fig.savefig(
-            output_dir / f"neuron_{neuron}_heatmaps.png",
+            f"{output_dir}/neuron_{neuron}_heatmaps.png",
             dpi=200,
             bbox_inches="tight",
         )
