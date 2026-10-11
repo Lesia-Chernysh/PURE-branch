@@ -66,7 +66,7 @@ def main(model_name,
         attribution = CondAttribution(tcc, model)
         layer_map = {layer: tcc for layer in layer_names}
         
-        fv = FeatureVisualization(concept, attribution, imagenet_data, layer_map,
+        fv = FeatureVisualization(tcc, attribution, imagenet_data, layer_map,
                                   preprocess_fn=None,
                                   path=fv_path, device=device,
                                   predicted_targets=predicted_targets)
