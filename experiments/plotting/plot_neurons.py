@@ -230,9 +230,12 @@ for inds_ in [neurons]:
             [np.array(img) for img in row]
             for row in virtual_neurons[neuron]
         ]
+
+        path = "results/virtual_neurons"
+        os.makedirs(path, exist_ok=True)
         
         np.savez_compressed(
-            "{path}/virtual_neurons_{layer_name}_{neuron}.npz",
+            f"{path}/{layer_name}_{neuron}.npz",
             **{
                 f"img_{i}_{j}": arr
                 for i, row in enumerate(imgs_as_arrays)
