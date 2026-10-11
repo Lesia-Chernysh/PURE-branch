@@ -4,7 +4,7 @@ from utils.lrp_canonizers import PUREResNetCanonizer
 from zennit.composites import EpsilonPlusFlat
 
 def get_vgg16(ckpt_path=None, n_class: int = None):
-    return timm.create_model("vgg16.tv_in1k", pretrained=True).to(device).eval()
+    return timm.create_model("vgg16.tv_in1k", pretrained=True).eval()
 
 
 def get_vgg16_canonizer():
