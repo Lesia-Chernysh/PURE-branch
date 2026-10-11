@@ -226,11 +226,19 @@ for inds_ in [neurons]:
             axs[2 + lab][i].set_yticks([])
             axs[2 + lab][i].set_ylabel(f"{lab + 1}") if i == 0 else None
 
-        print(virtual_neurons[neuron])
-        save_file({
-            neuron: virtual_neurons[neuron],
-        },
-            f"{path}/virtual_neurons_{layer_name}_{neuron}.safetensors")
+        imgs_as_arrays = [
+            [np.array(img) for img in row]
+            for row in virtual_neurons[neuron]
+        ]
+        
+        np.savez_compressed(
+            "{path}/virtual_neurons_{layer_name}_{neuron}.npz",
+            **{
+                f"img_{i}_{j}": arr
+                for i, row in enumerate(imgs_as_arrays)
+                for j, arr in enumerate(row)
+            }
+        )
 
     plt.tight_layout()
 
