@@ -163,6 +163,10 @@ for inds_ in [neurons]:
                 f"need at least {max(n_clusters, 3)}."
             )
         neuron_embeddings = embeddings[neuron, :n_valid]
+
+        ref_c = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid), composite=composite, plot_fn=None)
+        plot_grid(ref_c, figsize=(6, 9))
+      
         ref_imgs = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid),
                                         composite=composite, rf=True, batch_size=n_valid,
                                         plot_fn=vis_opaque_img_border)
