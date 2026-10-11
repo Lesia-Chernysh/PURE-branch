@@ -161,7 +161,7 @@ for inds_ in [neurons]:
         neuron_embeddings = embeddings[neuron, :n_valid]
         ref_imgs = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid),
                                         composite=composite, rf=True, batch_size=n_valid,
-                                        plot_fn=vis_opaque_img_border)
+                                        plot_fn=None)
 
         embedding = umap.UMAP(n_neighbors=min(6, n_valid - 1), min_dist=0.3, spread=1.0)
         X = embedding.fit_transform(neuron_embeddings)
