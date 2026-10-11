@@ -61,6 +61,7 @@ def main(model_name,
     if model_name == "vit":
         # import CRP from my branch 'CRP'
         from crp.concepts import TransformerChannelConcept
+        from crp.visualization import PredictionFeatureVisualization
 
         tcc = TransformerChannelConcept()
         attribution = CondAttribution(tcc, model)
