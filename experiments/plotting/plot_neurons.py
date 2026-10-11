@@ -1,10 +1,8 @@
 import os
 from argparse import ArgumentParser
-from typing import List
 
 import torchvision
 import umap
-import yaml
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
 from crp.helper import load_maximization
@@ -19,16 +17,16 @@ from zennit.composites import EpsilonPlusFlat
 
 from datasets import get_dataset
 from models import get_canonizer, get_fn_model_loader
-from utils.helper import get_layer_names_model, reference_lengths, validate_layer_name
+from utils.helper import (get_layer_names_model, load_config, reference_lengths,
+                          validate_layer_name)
 from utils.render import vis_opaque_img_border
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import zennit.image as zimage
-from utils.lrp_composites import ReferenceEpsilonPlusFlat
 
 
-def get_parser(fixed_arguments: List[str] = []):
+def get_parser():
     parser = ArgumentParser(
         description='Compute and display the top-k most relevant neurons for a given data sample/prediction.', )
 
@@ -44,17 +42,11 @@ def get_parser(fixed_arguments: List[str] = []):
     parser.add_argument('--n_refimgs', default=20, type=int)
     args = parser.parse_args()
 
-
-    with open(parser.parse_args().config_file, "r") as stream:
-        try:
-            config = yaml.safe_load(stream)
-            config["config_name"] = os.path.basename(args.config_file)[:-5]
-        except yaml.YAMLError as exc:
-            print(exc)
-            config = {}
+    config = load_config(args.config_file)
+    config["config_name"] = os.path.basename(args.config_file)[:-5]
 
     for k, v in config.items():
-        if k not in fixed_arguments:
+        if not hasattr(args, k) or getattr(args, k) is None:
             setattr(args, k, v)
 
     return args
@@ -82,7 +74,8 @@ ckpt_path = args.ckpt_path
 
 model = get_fn_model_loader(model_name)(n_class=dataset.num_classes, ckpt_path=ckpt_path).to(device)
 model.eval()
-
+canonizers = get_canonizer(model_name)
+composite = EpsilonPlusFlat(canonizers)
 cc = ChannelConcept()
 
 layer_names = get_layer_names_model(model, model_name)
@@ -92,20 +85,10 @@ print(layer_names)
 layer_name = args.layer_name or layer_names[-1]
 layer_name = validate_layer_name(layer_name, layer_names)
 
-canonizers = get_canonizer(model_name)
-           
-if model_name == "resnet50_transformers":
-    composite = ReferenceEpsilonPlusFlat(
-        canonizers=canonizers,
-        skip_layer=layer_name,
-        epsilon=1e-6,
-        zero_params=["bias"],
-    )
-
 attribution = CondAttribution(model)
 
 fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
-                          path=fv_name, max_target="sum", abs_norm=True)
+                          path=fv_name, max_target="max", abs_norm=False)
 
 if not os.path.isdir(fv.RelMax.PATH) or not os.listdir(fv.RelMax.PATH):
     raise FileNotFoundError(
