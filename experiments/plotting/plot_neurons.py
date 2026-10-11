@@ -193,7 +193,7 @@ for inds_ in [neurons]:
 
         resize = torchvision.transforms.Resize((150, 150))
 
-        NUM = 10
+        NUM = 8
         ref_imgs_ = ref_imgs[neuron][:n_valid]
         grid = make_grid(
             [resize(torch.from_numpy(np.asarray(k)).permute((2, 0, 1))) for k in ref_imgs_[:NUM]],
