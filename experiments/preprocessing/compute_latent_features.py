@@ -126,7 +126,7 @@ def main(model_name,
                 x = x.to(device).requires_grad_()
 
                 attr = attribution(x.requires_grad_(),
-                                   [{layer_name: neuron}],
+                                   [{layer_name: [neuron]}],
                                    grad_composite,
                                    record_layer=layer_names,
                                    start_layer=layer_name,
