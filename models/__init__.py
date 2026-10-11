@@ -3,6 +3,7 @@ from models.timm_resnet import get_resnet_timm, get_resnet50_timm, get_resnet34_
     get_resnet_canonizer
 from models.resnet50_transformers import get_resnet50, get_resnet50_canonizer, get_resnet50_composite
 from models.vgg16 import get_vgg16
+from models.vit import get_vit
 
 MODELS = {
     "resnet50_timm": get_resnet50_timm,
@@ -10,6 +11,7 @@ MODELS = {
     "resnet101_timm": get_resnet101_timm,
     "resnet50_transformers": get_resnet50,
     "vgg16": get_vgg16,
+    "vit": get_vit,
 }
 
 CANONIZERS = {
