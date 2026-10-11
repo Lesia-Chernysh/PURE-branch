@@ -1,0 +1,12 @@
+batch_size: 32
+ckpt_path: ''
+data_path: "${DATASET_ROOT}"
+dataset_name: imagenet-mini
+device: cuda
+model_name: vgg16
+layer_name: blocks.10.mlp
+splits:
+  - train
+  - val
+wandb_api_key: ''
+wandb_project_name: ''
