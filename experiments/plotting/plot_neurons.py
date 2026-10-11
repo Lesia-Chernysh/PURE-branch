@@ -98,7 +98,7 @@ if model_name == "resnet50_transformers":
           zero_params=["bias"],
       )
 elif model_name == "vgg16":
-      composite = EpsilonPlusFlat([SequentialMergeBatchNorm()])
+      composite = EpsilonPlusFlat(canonizers=[SequentialMergeBatchNorm()])
 
 attribution = CondAttribution(model)
 
