@@ -8,7 +8,7 @@ import umap
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
 from crp.helper import load_maximization
-
+from crp.image import plot_grid
 from crp.visualization import FeatureVisualization
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from safetensors import safe_open
