@@ -25,6 +25,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import zennit.image as zimage
 
+from utils.lrp_composites import ReferenceEpsilonPlusFlat
+
 
 def get_parser():
     parser = ArgumentParser(
@@ -74,8 +76,7 @@ ckpt_path = args.ckpt_path
 
 model = get_fn_model_loader(model_name)(n_class=dataset.num_classes, ckpt_path=ckpt_path).to(device)
 model.eval()
-canonizers = get_canonizer(model_name)
-composite = EpsilonPlusFlat(canonizers)
+
 cc = ChannelConcept()
 
 layer_names = get_layer_names_model(model, model_name)
@@ -84,6 +85,16 @@ layer_map = {layer: cc for layer in layer_names}
 print(layer_names)
 layer_name = args.layer_name or layer_names[-1]
 layer_name = validate_layer_name(layer_name, layer_names)
+
+canonizers = get_canonizer(model_name)
+           
+if model_name == "resnet50_transformers":
+    composite = ReferenceEpsilonPlusFlat(
+          canonizers=canonizers,
+          skip_layer=layer_name,
+          epsilon=1e-6,
+          zero_params=["bias"],
+      )
 
 attribution = CondAttribution(model)
 
