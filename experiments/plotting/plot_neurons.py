@@ -43,12 +43,8 @@ def get_parser(fixed_arguments: List[str] = []):
     parser.add_argument('--n_refimgs', default=20, type=int)
     args = parser.parse_args()
 
-    with open(args.config_file, encoding="utf-8") as file:
-        config_text = os.path.expandvars(file.read())
-    
-    config = yaml.safe_load(config_text)
 
-    '''with open(parser.parse_args().config_file, "r") as stream:
+    with open(parser.parse_args().config_file, "r") as stream:
         try:
             config = yaml.safe_load(stream)
             config["config_name"] = os.path.basename(args.config_file)[:-5]
@@ -60,7 +56,7 @@ def get_parser(fixed_arguments: List[str] = []):
         if k not in fixed_arguments:
             setattr(args, k, v)
 
-    return args'''
+    return args
 
 
 args = get_parser()
