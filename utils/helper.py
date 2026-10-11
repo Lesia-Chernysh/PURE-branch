@@ -53,7 +53,7 @@ def get_layer_names_model(model: torch.nn.Module, model_name: str) -> List[str]:
     elif model_name == "vit":
         layer_names = [
             name
-            for name, module in vit.named_modules()
+            for name, module in model.named_modules()
             if type(module).__name__ == "Mlp" and name.endswith("mlp")
         ]
     elif model_name == "vilt":
@@ -73,7 +73,7 @@ def get_layer_names_model(model: torch.nn.Module, model_name: str) -> List[str]:
         
         layer_names = []
         
-        for name, layer in crp_model.named_modules():
+        for name, layer in model.named_modules():
           if name in selected_names:
             layer_names.append(name)
 
