@@ -1,4 +1,5 @@
 import os
+import re
 
 import torch
 import yaml
@@ -9,12 +10,19 @@ from transformers import AutoProcessor
 
 
 def load_config(config_path):
-    with open(config_path, "r") as stream:
+    with open(config_path, "r", encoding="utf-8") as stream:
         try:
-            config = yaml.safe_load(stream)
+            config_text = os.path.expandvars(stream.read())
+            unresolved = sorted(set(re.findall(r"\$\{([^}]+)\}", config_text)))
+            if unresolved:
+                names = ", ".join(unresolved)
+                raise EnvironmentError(
+                    f"Unresolved environment variable(s) in {config_path}: {names}. "
+                    "Set them before running the command or use an absolute path."
+                )
+            config = yaml.safe_load(config_text) or {}
         except yaml.YAMLError as exc:
-            print(exc)
-            config = {}
+            raise ValueError(f"Invalid YAML in {config_path}: {exc}") from exc
         config["wandb_id"] = os.path.basename(config_path)[:-5]
     return config
 
