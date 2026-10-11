@@ -166,8 +166,8 @@ for inds_ in [neurons]:
 
         ref_c = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid), composite=composite, plot_fn=None)
         fig = plot_grid(ref_c, figsize=(6, 9))
-        output_dir = Path(f"results/neuron_plots/{dataset_name}/{model_name}")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = f"results/neuron_plots/{dataset_name}/{model_name}"
+        os.mkdirs(output_dir, exist_ok=True)
       
         fig.savefig(
             output_dir / f"neuron_{neuron}_heatmaps.png",
