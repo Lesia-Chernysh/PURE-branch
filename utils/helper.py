@@ -50,6 +50,37 @@ def get_layer_names_model(model: torch.nn.Module, model_name: str) -> List[str]:
             if isinstance(module, torch.nn.Conv2d)
             and "head" not in name
         ]
+    elif model_name == "vit":
+        layer_names = [
+            name
+            for name, module in vit.named_modules()
+            if type(module).__name__ == "Mlp" and name.endswith("mlp")
+        ]
+    elif model_name == "vilt":
+        selected_names = [
+            "model.vilt.encoder.layer.1.output.dense",
+            "model.vilt.encoder.layer.2.output.dense",
+            "model.vilt.encoder.layer.3.output.dense",
+            "model.vilt.encoder.layer.4.output.dense",
+            "model.vilt.encoder.layer.5.output.dense",
+            "model.vilt.encoder.layer.6.output.dense",
+            "model.vilt.encoder.layer.7.output.dense",
+            "model.vilt.encoder.layer.8.output.dense",
+            "model.vilt.encoder.layer.9.output.dense",
+            "model.vilt.encoder.layer.10.output.dense",
+            "model.vilt.encoder.layer.11.output.dense",
+        ]
+        
+        layer_names = []
+        
+        for name, layer in crp_model.named_modules():
+          if name in selected_names:
+            layer_names.append(name)
+
+    #elif model_name == "qwen":
+    #    layer_names = [
+    #        
+    #    ]
     else:
         raise NotImplementedError
     return layer_names
