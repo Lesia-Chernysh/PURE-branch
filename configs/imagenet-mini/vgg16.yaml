@@ -4,7 +4,7 @@ data_path: "${DATASET_ROOT}"
 dataset_name: imagenet-mini
 device: cuda
 model_name: vgg16
-layer_name: blocks.10.mlp
+layer_name: features.28
 splits:
   - train
   - val
