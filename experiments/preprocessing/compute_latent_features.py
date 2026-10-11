@@ -99,8 +99,6 @@ def main(model_name,
     cond_relevances_1 = []
 
     for i, neuron in enumerate(tqdm(np.arange(0, num_neurons))):
-        print(f"neuron: {neuron}")
-
         max_activations.append([])
         mean_activations.append([])
         cond_relevances_1.append([])
