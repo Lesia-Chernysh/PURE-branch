@@ -14,6 +14,7 @@ from scipy import stats
 from sklearn.cluster import KMeans
 from torchvision.utils import make_grid
 from zennit.composites import EpsilonPlusFlat
+from zennit.canonizers import SequentialMergeBatchNorm
 
 from datasets import get_dataset
 from models import get_canonizer, get_fn_model_loader
@@ -86,16 +87,17 @@ layer_map = {layer: cc for layer in layer_names}
 print(layer_names)
 layer_name = args.layer_name or layer_names[-1]
 layer_name = validate_layer_name(layer_name, layer_names)
-
-canonizers = get_canonizer(model_name)
            
 if model_name == "resnet50_transformers":
+    canonizers = get_canonizer(model_name)
     composite = ReferenceEpsilonPlusFlat(
           canonizers=canonizers,
           skip_layer=layer_name,
           epsilon=1e-6,
           zero_params=["bias"],
       )
+  elif model_name == "vgg16":
+      composite = EpsilonPlusFlat([SequentialMergeBatchNorm()])
 
 attribution = CondAttribution(model)
 
