@@ -136,8 +136,20 @@ def main(model_name,
                 lower_relevance = lower_gradient * lower_activations
                 cond_relevances_1[i].append(concept.attribute(lower_relevance, abs_norm=True))
 
-                max_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).amax((2, 3)))
-                mean_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).mean((2, 3)))
+                activation = attr.activations[layer_name].detach().cpu().clamp(min=0)
+
+                if model_name == "vit":
+                    if activation.ndim != 3:
+                        raise ValueError(
+                            f"Expected ViT activation [B, tokens, channels], "
+                            f"got {tuple(activation.shape)}"
+                        )
+                
+                    max_activations_1[i].append(activation.amax(dim=1))
+                    mean_activations_1[i].append(activation.mean(dim=1))
+                else:
+                    max_activations_1[i].append(activation.amax(dim=(2, 3)))
+                    mean_activations_1[i].append(activation.mean(dim=(2, 3)))
 
         max_activations[i] = torch.cat(max_activations[i], dim=0)
         mean_activations[i] = torch.cat(mean_activations[i], dim=0)
