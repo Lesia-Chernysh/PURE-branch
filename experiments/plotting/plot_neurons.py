@@ -165,7 +165,8 @@ for inds_ in [neurons]:
         neuron_embeddings = embeddings[neuron, :n_valid]
 
         ref_c = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid), composite=composite, plot_fn=None)
-        plot_grid(ref_c, figsize=(6, 9))
+        fig = plot_grid(ref_c, figsize=(6, 9))
+        plt.show()
       
         ref_imgs = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid),
                                         composite=composite, rf=True, batch_size=n_valid,
