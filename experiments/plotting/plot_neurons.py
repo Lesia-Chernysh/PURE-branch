@@ -42,6 +42,7 @@ def get_parser():
     parser.add_argument('--layer_name', default=None)
     parser.add_argument('--num_clusters', default=2, type=int)
     parser.add_argument('--n_refimgs', default=20, type=int)
+    parser.add_argument('--mode', default='activation', type=str)
     args = parser.parse_args()
 
     config = load_config(args.config_file)
@@ -67,7 +68,7 @@ crp_split = getattr(args, "crp_split", None) or SPLIT
 fv_name = f"crp_files/{model_name}_{dataset_name}_{crp_split}"
 batch_size = 100
 n_refimgs = args.n_refimgs
-mode = "activation"
+mode = args.mode
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 dataset = get_dataset(dataset_name)(data_path=args.data_path, preprocessing=False, split=SPLIT)
