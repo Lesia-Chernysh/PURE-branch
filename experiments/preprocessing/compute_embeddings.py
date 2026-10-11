@@ -12,6 +12,7 @@ from safetensors.torch import save_file
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoModel, AutoImageProcessor, AutoProcessor, FlavaImageModel, CLIPVisionModel
+from semanticlens.foundation_models import ClipMobile
 
 from zennit.core import Composite
 
@@ -44,7 +45,7 @@ def main(model_name,
          layer_name,
          crp_split=None):
 
-    NREF = 100
+    NREF = 40
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     dataset = get_dataset(dataset_name)(data_path=data_path, preprocessing=False, split=split)
@@ -100,12 +101,12 @@ def main(model_name,
         DINO.append([])
 
         # print(f"Neuron {neuron} / {i}")
-        ref_imgs = fv.get_max_reference([neuron], layer_name, "activation", (0, 50),
+        ref_imgs = fv.get_max_reference([neuron], layer_name, "activation", (0, 40),
                                         composite=composite, rf=True, batch_size=NREF,
                                         plot_fn=crop_and_mask_images)[neuron]
-        ref_imgs += fv.get_max_reference([neuron], layer_name, "activation", (50, NREF),
-                             composite=composite, rf=True, batch_size=NREF,
-                             plot_fn=crop_and_mask_images)[neuron]
+        #ref_imgs += fv.get_max_reference([neuron], layer_name, "activation", (50, NREF),
+        #                     composite=composite, rf=True, batch_size=NREF,
+        #                     plot_fn=crop_and_mask_images)[neuron]
 
 
         data_set = CustomDataset(ref_imgs, processor_CLIP)
