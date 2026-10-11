@@ -165,7 +165,9 @@ for inds_ in [neurons]:
         neuron_embeddings = embeddings[neuron, :n_valid]
 
         ref_c = fv.get_max_reference([neuron], layer_name, mode, (0, n_valid), composite=composite, plot_fn=None)
-        fig = plot_grid(ref_c, figsize=(6, 9))
+        plot_grid(ref_c, figsize=(6, 9))
+        fig = plt.gcf()
+      
         output_dir = f"results/neuron_plots/{dataset_name}/{model_name}"
         os.makedirs(output_dir, exist_ok=True)
       
