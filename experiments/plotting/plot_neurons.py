@@ -25,6 +25,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import zennit.image as zimage
+from utils.lrp_composites import ReferenceEpsilonPlusFlat
 
 
 def get_parser(fixed_arguments: List[str] = []):
