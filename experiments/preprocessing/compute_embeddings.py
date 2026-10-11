@@ -151,7 +151,9 @@ if __name__ == "__main__":
     data_path = config.get('data_path', None)
     ckpt_path = config.get('ckpt_path', None)
     splits = [args.split] if args.split else config.get('splits', ['test'])
+    print(f"splits: {splits}")
     crp_split = config.get('crp_split')
+    print(f"crp split: {crp_split}")
 
     for split in splits:
         main(model_name, ckpt_path, dataset_name, data_path, split, layer_name,
