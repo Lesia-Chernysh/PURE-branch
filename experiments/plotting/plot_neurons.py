@@ -2,6 +2,8 @@ import os
 from argparse import ArgumentParser
 
 import torchvision
+from safetensors.torch import save_file
+
 import umap
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
@@ -21,12 +23,11 @@ from models import get_canonizer, get_fn_model_loader
 from utils.helper import (get_layer_names_model, load_config, reference_lengths,
                           validate_layer_name)
 from utils.render import vis_opaque_img_border
+from utils.lrp_composites import ReferenceEpsilonPlusFlat
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import zennit.image as zimage
-
-from utils.lrp_composites import ReferenceEpsilonPlusFlat
 
 
 def get_parser():
@@ -205,8 +206,13 @@ for inds_ in [neurons]:
 
         cluster = KMeans(n_clusters=n_clusters, n_init=20, random_state=123).fit(neuron_embeddings)
         labels = np.array(cluster.labels_)
+
+        virtual_neurons = {neuron: []} 
+      
         for lab in np.unique(labels):
             ref_imgs_cluster = [r for k, r in enumerate(ref_imgs_) if labels[k] == lab]
+            virtual_neurons[neuron].append(ref_imgs_cluster)
+          
             grid = make_grid(
                 [resize(torch.from_numpy(np.asarray(k)).permute((2, 0, 1))) for k in ref_imgs_cluster[:NUM]],
                 nrow=NUM,
@@ -218,6 +224,11 @@ for inds_ in [neurons]:
             axs[2 + lab][i].set_ylabel(f"{lab + 1}") if i == 0 else None
 
     plt.tight_layout()
+
+    save_file({
+        neuron: virtual_neurons[neuron],
+    },
+        f"{path}/virtual_neurons_{layer_name}_{neuron}.safetensors")
 
     path = f"results/neuron_plots/{dataset_name}/{model_name}"
     os.makedirs(path, exist_ok=True)
