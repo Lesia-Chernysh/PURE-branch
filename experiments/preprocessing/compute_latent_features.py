@@ -71,7 +71,7 @@ def main(model_name,
         
         fv = PredictionFeatureVisualization(tcc, attribution, dataset, layer_map,
                                   preprocess_fn=None,
-                                  path=fv_path,
+                                  path=f"crp_files/{fname}",
                                   device=device,
                                   max_target="sum", abs_norm=True,
                                   predicted_targets=predicted_targets)
