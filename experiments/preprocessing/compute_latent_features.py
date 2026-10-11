@@ -63,13 +63,13 @@ def main(model_name,
         from crp.concepts import TransformerChannelConcept
         from crp.visualization import PredictionFeatureVisualization
 
-        tcc = TransformerChannelConcept()
-        attribution = CondAttribution(tcc, model)
-        layer_map = {layer: tcc for layer in layer_names}
+        concept = TransformerChannelConcept()
+        attribution = CondAttribution(concept, model)
+        layer_map = {layer: concept for layer in layer_names}
 
         predicted_targets = torch.load("vit_predicted_targets.pt")
         
-        fv = PredictionFeatureVisualization(tcc, attribution, dataset, layer_map,
+        fv = PredictionFeatureVisualization(concept, attribution, dataset, layer_map,
                                   preprocess_fn=None,
                                   path=f"crp_files/{fname}",
                                   device=device,
@@ -77,8 +77,8 @@ def main(model_name,
                                   predicted_targets=predicted_targets)
     else:
         attribution = CondAttribution(model)
-        cc = ChannelConcept()
-        layer_map = {layer: cc for layer in layer_names}
+        concept = ChannelConcept()
+        layer_map = {layer: concept for layer in layer_names}
         fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
                                   path=f"crp_files/{fname}", max_target="sum", abs_norm=True)
 
@@ -135,7 +135,7 @@ def main(model_name,
                 lower_gradient = attr.relevances[prev_layer].detach().cpu()
                 lower_activations = attr.activations[prev_layer].detach().cpu()
                 lower_relevance = lower_gradient * lower_activations
-                cond_relevances_1[i].append(cc.attribute(lower_relevance, abs_norm=True))
+                cond_relevances_1[i].append(concept.attribute(lower_relevance, abs_norm=True))
 
                 max_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).amax((2, 3)))
                 mean_activations[i].append(attr.activations[layer_name].detach().cpu().clamp(min=0).mean((2, 3)))
