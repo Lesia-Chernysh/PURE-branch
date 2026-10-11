@@ -55,14 +55,24 @@ def main(model_name,
     attribution = CondAttribution(model)
 
     layer_names = get_layer_names_model(model, model_name)
-    cc = ChannelConcept()
-    layer_map = {layer: cc for layer in layer_names}
 
     crp_split = crp_split or split
     fname = f"{model_name}_{dataset_name}_{crp_split}"
     # TODO: I changed max_target from max to sum and abs_norm from False to True
-    fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
-                              path=f"crp_files/{fname}", max_target="sum", abs_norm=True)
+    if model_name == "vit":
+        from crp.concepts import TransformerChannelConcept
+        tcc = TransformerChannelConcept()
+        layer_map = {layer: tcc for layer in layer_names}
+        
+        fv = FeatureVisualization(concept, attribution, imagenet_data, layer_map,
+                                  preprocess_fn=None,
+                                  path=fv_path, device=device,
+                                  predicted_targets=predicted_targets)
+    else:
+        cc = ChannelConcept()
+        layer_map = {layer: cc for layer in layer_names}
+        fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
+                                  path=f"crp_files/{fname}", max_target="sum", abs_norm=True)
 
     grad_composite = Composite()
 
