@@ -52,16 +52,18 @@ def main(model_name,
     model.eval()
     print("Model loaded")
 
-    attribution = CondAttribution(model)
-
     layer_names = get_layer_names_model(model, model_name)
 
     crp_split = crp_split or split
     fname = f"{model_name}_{dataset_name}_{crp_split}"
+             
     # TODO: I changed max_target from max to sum and abs_norm from False to True
     if model_name == "vit":
+        # import CRP from my branch 'CRP'
         from crp.concepts import TransformerChannelConcept
+
         tcc = TransformerChannelConcept()
+        attribution = CondAttribution(tcc, model)
         layer_map = {layer: tcc for layer in layer_names}
         
         fv = FeatureVisualization(concept, attribution, imagenet_data, layer_map,
@@ -69,6 +71,7 @@ def main(model_name,
                                   path=fv_path, device=device,
                                   predicted_targets=predicted_targets)
     else:
+        attribution = CondAttribution(model)
         cc = ChannelConcept()
         layer_map = {layer: cc for layer in layer_names}
         fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
