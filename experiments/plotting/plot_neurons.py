@@ -29,6 +29,26 @@ import numpy as np
 import matplotlib.pyplot as plt
 import zennit.image as zimage
 
+from timm.layers import maybe_add_mask, resolve_self_attn_mask
+from timm.layers.attention import Attention
+from timm.layers.norm import LayerNorm as TimmLayerNorm
+
+from functools import partial
+
+from lxt.efficient import monkey_patch, monkey_patch_zennit
+from lxt.efficient.patches import (
+    dropout_forward,
+    layer_norm_forward,
+    non_linear_forward,
+    patch_method,
+    stop_gradient,
+)
+
+from zennit.image import imgify
+from zennit.composites import LayerMapComposite
+import zennit.rules as z_rules
+
+from utils.attnlrp_timm_vit_conservative import *
 
 def get_parser():
     parser = ArgumentParser(
@@ -80,16 +100,16 @@ ckpt_path = args.ckpt_path
 model = get_fn_model_loader(model_name)(n_class=dataset.num_classes, ckpt_path=ckpt_path).to(device)
 model.eval()
 
-cc = ChannelConcept()
-
 layer_names = get_layer_names_model(model, model_name)
-layer_map = {layer: cc for layer in layer_names}
 
 print(layer_names)
 layer_name = args.layer_name or layer_names[-1]
 layer_name = validate_layer_name(layer_name, layer_names)
            
 if model_name == "resnet50_transformers":
+    cc = ChannelConcept()
+    layer_map = {layer: cc for layer in layer_names}
+  
     canonizers = get_canonizer(model_name)
     composite = ReferenceEpsilonPlusFlat(
           canonizers=canonizers,
@@ -97,16 +117,78 @@ if model_name == "resnet50_transformers":
           epsilon=1e-6,
           zero_params=["bias"],
       )
+    attribution = CondAttribution(model)
+
+    fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
+                              path=fv_name, max_target="sum", abs_norm=True)
+  
 elif model_name == "vgg16":
+      cc = ChannelConcept()
+      layer_map = {layer: cc for layer in layer_names} 
+  
       composite = ReferenceEpsilonPlusFlat(
           canonizers=[SequentialMergeBatchNorm()],
           skip_layer=layer_name,
       )
+      attribution = CondAttribution(model)
+  
+      fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
+                                path=fv_name, max_target="sum", abs_norm=True)
+elif model_name == "vit":
+    from crp.concepts import TransformerChannelConcept
+    from crp.visualization import PredictionFeatureVisualization
 
-attribution = CondAttribution(model)
+    tcc = TransformerChannelConcept()
+    layer_map = {layer: tcc for layer in layer_names} 
+  
+    composite = ReferenceEpsilonPlusFlat(
+          canonizers=[SequentialMergeBatchNorm()],
+          skip_layer=layer_name,
+    )
+    attribution = CondAttribution(tcc, model)
 
-fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
-                          path=fv_name, max_target="sum", abs_norm=True)
+    # modify ViT for AttnLRP
+    # Enable these only so their residual relevance can be measured.
+    if model.cls_token is not None:
+            model.cls_token.requires_grad_(True)
+    if model.pos_embed is not None:
+            model.pos_embed.requires_grad_(True)
+    
+    for block in model.blocks:
+            block.attn.fused_attn = False
+    
+    
+    # apply monkey patching
+    PATCH_MAP = {
+        torch.nn.GELU: partial(patch_method, non_linear_forward, keep_original=True),
+        torch.nn.Dropout: partial(patch_method, dropout_forward),
+        # timm uses its own LayerNorm class
+        TimmLayerNorm: partial(patch_method, layer_norm_forward),
+        Attention: partial(
+            patch_method, timm_attention_forward, keep_original=True
+        ),
+        torch.nn.Identity: partial(patch_method, identity_forward, keep_original=True),
+    }
+    
+    monkey_patch(
+        model,
+        patch_map=PATCH_MAP,
+        verbose=True,
+    )
+    
+    monkey_patch_zennit(verbose=True)
+
+    composite = LayerMapComposite([
+        (torch.nn.Conv2d, z_rules.Gamma(0.5)),
+        (torch.nn.Linear, z_rules.Gamma(10)),
+    ])
+
+    predicted_targets = torch.load("vit_predicted_targets.pt")
+  
+    fv = PredictionFeatureVisualization(tcc, attribution, dataset, layer_map,
+                                  preprocess_fn=None,
+                                  path=fv_path, device=device,
+                                  predicted_targets=predicted_targets)
 
 if not os.path.isdir(fv.RelMax.PATH) or not os.listdir(fv.RelMax.PATH):
     raise FileNotFoundError(
