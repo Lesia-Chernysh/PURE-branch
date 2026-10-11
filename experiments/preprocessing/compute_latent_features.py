@@ -65,10 +65,14 @@ def main(model_name,
         tcc = TransformerChannelConcept()
         attribution = CondAttribution(tcc, model)
         layer_map = {layer: tcc for layer in layer_names}
+
+        predicted_targets = torch.load("vit_predicted_targets.pt")
         
-        fv = FeatureVisualization(tcc, attribution, imagenet_data, layer_map,
+        fv = PredictionFeatureVisualization(tcc, attribution, dataset, layer_map,
                                   preprocess_fn=None,
-                                  path=fv_path, device=device,
+                                  path=fv_path,
+                                  device=device,
+                                  max_target="sum", abs_norm=True,
                                   predicted_targets=predicted_targets)
     else:
         attribution = CondAttribution(model)
