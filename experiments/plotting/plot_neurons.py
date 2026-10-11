@@ -99,7 +99,7 @@ if model_name == "resnet50_transformers":
 attribution = CondAttribution(model)
 
 fv = FeatureVisualization(attribution, dataset, layer_map, preprocess_fn=dataset.preprocessing,
-                          path=fv_name, max_target="max", abs_norm=False)
+                          path=fv_name, max_target="sum", abs_norm=True)
 
 if not os.path.isdir(fv.RelMax.PATH) or not os.listdir(fv.RelMax.PATH):
     raise FileNotFoundError(
