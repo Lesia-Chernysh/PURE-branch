@@ -23,6 +23,7 @@ from utils.helper import (CustomDataset, get_layer_names_model, load_config,
 #from utils.lrp_composites import EpsilonPlusFlat, ReferenceEpsilonPlusFlat
 from utils.lrp_composites import ReferenceEpsilonPlusFlat
 from zennit.composites import EpsilonPlusFlat
+from zennit.canonizers import SequentialMergeBatchNorm
 from utils.render import crop_and_mask_images
 
 import yaml
@@ -71,16 +72,17 @@ def main(model_name,
 
     layer_names = get_layer_names_model(model, model_name)
     layer_name = validate_layer_name(layer_name or layer_names[-1], layer_names)
-
-    canonizers = get_canonizer(model_name)
            
     if model_name == "resnet50_transformers":
+      canonizers = get_canonizer(model_name)
       composite = ReferenceEpsilonPlusFlat(
             canonizers=canonizers,
             skip_layer=layer_name,
             epsilon=1e-6,
             zero_params=["bias"],
         )
+    elif model_name == "vgg16":
+      composite = EpsilonPlusFlat([SequentialMergeBatchNorm()])
       
     cc = ChannelConcept()
     layer_map = {layer: cc for layer in layer_names}
