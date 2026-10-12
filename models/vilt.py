@@ -66,7 +66,7 @@ def get_vilt_canonizer():
 
 
 def get_vilt_composite():
-  return composite = Composite(
+  return Composite(
       {
           #nn.Linear: rules.EpsilonRule,
           nn.Tanh: rules.IdentityRule,
