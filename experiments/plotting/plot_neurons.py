@@ -187,7 +187,7 @@ elif model_name == "vit":
   
     fv = PredictionFeatureVisualization(tcc, attribution, dataset, layer_map,
                                   preprocess_fn=None,
-                                  path=fv_path, device=device,
+                                  path=fv_name, device=device,
                                   predicted_targets=predicted_targets)
 
 if not os.path.isdir(fv.RelMax.PATH) or not os.listdir(fv.RelMax.PATH):
