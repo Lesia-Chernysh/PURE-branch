@@ -200,7 +200,7 @@ def get_imagenetmini_for_vqa(
     split
 ):
     dataset = get_imagenetmini(
-        data_path: str | os.PathLike[str],
+        data_path,
         preprocessing,
         split
     )
