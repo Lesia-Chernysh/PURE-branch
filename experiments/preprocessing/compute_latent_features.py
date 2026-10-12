@@ -75,6 +75,24 @@ def main(model_name,
                                   device=device,
                                   max_target="sum", abs_norm=True,
                                   predicted_targets=predicted_targets)
+    elif model_name == "vilt":
+        from lxt.explicit.models.vilt import ViltForQuestionAnswering, attnlrp as lrp_rule_composite
+        from models.vilt import ViltCRPWrapper
+        from transformers import ViltProcessor
+        processor = ViltProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
+
+        concept = TransformerChannelConcept()
+        attribution = CondAttribution(concept, model)
+        layer_map = {layer: concept for layer in layer_names}
+
+        predicted_targets = torch.load("vilt_predicted_targets.pt")
+        
+        fv = PredictionFeatureVisualization(concept, attribution, dataset, layer_map,
+                                  preprocess_fn=None,
+                                  path=f"crp_files/{fname}",
+                                  device=device,
+                                  max_target="sum", abs_norm=True,
+                                  predicted_targets=predicted_targets)
     else:
         attribution = CondAttribution(model)
         concept = ChannelConcept()
@@ -190,6 +208,39 @@ def main(model_name,
                     activation.mean(dim=1)
                 )
     
+            elif model_name == "vilt":
+                if activation.ndim != 3:
+                    raise ValueError(
+                        "Expected ViLT activation [B, sequence, channels], "
+                        f"got {tuple(activation.shape)}"
+                    )
+            
+                # Number of positions occupied by the padded text sequence.
+                text_length = inputs["input_ids"].shape[1]
+            
+                # ViLT concatenates text tokens followed by image tokens.
+                image_activation = activation[:, text_length:, :]
+            
+                if image_activation.shape[1] == 0:
+                    raise RuntimeError(
+                        f"No image tokens found: activation shape={tuple(activation.shape)}, "
+                        f"text length={text_length}"
+                    )
+            
+                # Position zero of the image sequence is ViLT's image CLS token.
+                # Exclude it when measuring spatial image-patch activations.
+                image_patch_activation = image_activation[:, 1:, :]
+            
+                if image_patch_activation.shape[1] == 0:
+                    raise RuntimeError("ViLT activation contains no image-patch tokens.")
+            
+                max_activations[i].append(
+                    image_patch_activation.amax(dim=1)
+                )
+                mean_activations[i].append(
+                    image_patch_activation.mean(dim=1)
+                )
+                
             else:
                 # CNN: [batch, channels, height, width]
                 if activation.ndim != 4:
