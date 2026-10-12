@@ -1,11 +1,12 @@
 from typing import Callable
 
 from datasets.imagenet import get_imagenet
-from datasets.imagenet_mini import get_imagenetmini
+from datasets.imagenet_mini import get_imagenetmini, get_imagenetmini_for_vqa
 
 DATASETS = {
     "imagenet": get_imagenet,
     "imagenet-mini": get_imagenetmini,
+    "imagenetmini_for_vqa": get_imagenetmini_for_vqa
 }
 
 
