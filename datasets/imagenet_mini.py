@@ -33,6 +33,7 @@ def get_imagenetmini(
     #         std=[0.229, 0.224, 0.225]
     #     )
     # ])
+    data_config = timm.data.resolve_data_config({}, model=model)
     transform = timm.data.create_transform(**data_config)
     return ImageNetMiniDataset(
         root=data_path,
