@@ -44,6 +44,11 @@ def main(model_name,
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     dataset = get_dataset(dataset_name)(data_path=data_path, preprocessing=True, split=split)
+             
+    if model_name == "vilt" or model_name == "qwen":
+        from datasets.imagenet_mini import get_imagenet_mini_for_vqa
+        dataset = get_imagenet_mini_for_vqa()
+    
 
     print("Dataset loaded")
 
