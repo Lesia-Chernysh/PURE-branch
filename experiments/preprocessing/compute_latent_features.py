@@ -56,9 +56,9 @@ def main(model_name,
         dataset = get_imagenetmini_for_vqa(
             data_path=data_path,
             dataset=dataset,
-            predicted_labels,
+            predicted_labels=predicted_labels,
             preprocessing=True, 
-            split=split
+            split=split,
         )
     
 
