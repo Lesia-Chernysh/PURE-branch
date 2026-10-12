@@ -1,0 +1,12 @@
+batch_size: 32
+ckpt_path: ''
+data_path: "${DATASET_ROOT}"
+dataset_name: imagenet-mini
+device: cuda
+model_name: vilt
+layer_name: model.vilt.encoder.layer.11.output.dense
+splits:
+  - train
+  - val
+wandb_api_key: ''
+wandb_project_name: ''
