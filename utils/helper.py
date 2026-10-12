@@ -8,6 +8,26 @@ from crp.helper import get_layer_names
 from typing import List
 from transformers import AutoProcessor
 
+# for colorize
+import html
+import matplotlib
+from matplotlib.colors import Normalize, to_hex
+from IPython.display import HTML
+
+def colorize(tokens:list[str], weights:list[float], target:str=None):
+    """returns a html heatmap representation of the tokens colored by weights.
+        tokens and weights should match in lenghth
+        target is optionally the token the weights were calculated for
+    """
+    template = '<span style="color: black; background-color: {}">{}</span>'
+    colors = map(to_hex, matplotlib.colormaps['bwr'](Normalize(vmin=-1, vmax=1)(weights)))
+    colored_output = ''
+    for token, color in zip(tokens, colors):
+        colored_output += template.format(color, '&nbsp'+html.escape(token)+'&nbsp')
+    if target:
+        colored_output += template.format('lime', '&nbsp'+html.escape(target)+'&nbsp')
+    return HTML(colored_output)
+
 
 def load_config(config_path):
     with open(config_path, "r", encoding="utf-8") as stream:
