@@ -192,22 +192,39 @@ class ImageNetMiniDataset(Dataset):
         """Identity operation: this adapter applies no default augmentation."""
         return data
 
+def get_imagenetmini_for_vqa(
+    data_path: str | os.PathLike[str],
+    dataset,
+    predicted_labels,
+    preprocessing,
+    split
+):
+    dataset = get_imagenetmini(
+        data_path: str | os.PathLike[str],
+        preprocessing,
+        split
+    )
+    return ImageQuestionAnswerDataset(dataset, predicted_labels)
+
 class ImageQuestionAnswerDataset(Dataset):
-    def __init__(self, dataset):
+    def __init__(self, dataset, predicted_labels):
         self.dataset = dataset
         self.question = "What is on the image?"
         self.classes = None
+        self.predicted_labels = predicted_labels
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        image, class_idx = self.dataset[idx]
+        image, _ = self.dataset[idx]
 
-        # ImageFolder already knows the class name
-        label = self.dataset.classes[class_idx]
+        path, _ = self.dataset.samples[idx]  # dataset.samples contains (path, 0)
 
-        return image, self.question, label
+        #label = path_to_class_name(path)
+        label = self.predicted_labels[idx]
+
+        return idx, image, self.question, label
 
 # labels for the dataset where predicted by ResNet50
 dataset_labels = {}
