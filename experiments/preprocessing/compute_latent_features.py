@@ -46,8 +46,20 @@ def main(model_name,
     dataset = get_dataset(dataset_name)(data_path=data_path, preprocessing=True, split=split)
              
     if model_name == "vilt" or model_name == "qwen":
-        from datasets.imagenet_mini import get_imagenet_mini_for_vqa
-        dataset = get_imagenet_mini_for_vqa()
+        from datasets.imagenet_mini import get_imagenetmini_for_vqa
+        
+        if model_name == "vilt":
+            predicted_labels = torch.load("vilt_predicted_targets.pt")
+        else:
+            predicted_labels = torch.load("qwen_predicted_targets.pt")
+        
+        dataset = get_imagenetmini_for_vqa(
+            data_path=data_path,
+            dataset=dataset,
+            predicted_labels,
+            preprocessing=True, 
+            split=split
+        )
     
 
     print("Dataset loaded")
