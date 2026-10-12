@@ -85,8 +85,6 @@ def main(model_name,
     grad_composite = Composite()
 
     layer_name = validate_layer_name(layer_name or layer_names[-1], layer_names)
-    print(f"layer_name: {layer_name}")
-    print(f"layer_names: {layer_names}")
     prev_layer = layer_names[layer_names.index(layer_name) - 1]
 
     d_c_sorted, a, rf_c_sorted = load_maximization(fv.ActMax.PATH, layer_name)
