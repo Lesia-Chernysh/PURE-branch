@@ -20,6 +20,7 @@ def get_imagenetmini(
     Leave ``transform=None`` when a Transformers ``AutoImageProcessor`` will be
     called later. Supplying a transform is opt-in and is never done implicitly.
     """
+    # TODO: change labels based on the model
     labels_path = "input_files/resnet50_predicted_targets.pt"
     transform = T.Compose([
         T.Resize(256),
