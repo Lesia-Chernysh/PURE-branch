@@ -188,6 +188,23 @@ class ImageNetMiniDataset(Dataset):
         """Identity operation: this adapter applies no default augmentation."""
         return data
 
+class ImageQuestionAnswerDataset(Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.question = "What is on the image?"
+        self.classes = None
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        image, class_idx = self.dataset[idx]
+
+        # ImageFolder already knows the class name
+        label = self.dataset.classes[class_idx]
+
+        return image, self.question, label
+
 # labels for the dataset where predicted by ResNet50
 dataset_labels = {}
 
