@@ -1,7 +1,7 @@
 batch_size: 32
 ckpt_path: ''
 data_path: "${DATASET_ROOT}"
-dataset_name: imagenet-mini
+dataset_name: imagenetmini_for_vqa
 device: cuda
 model_name: vilt
 layer_name: model.vilt.encoder.layer.11.output.dense
