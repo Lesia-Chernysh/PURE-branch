@@ -10,6 +10,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision.datasets import ImageFolder
 
+import timm
+
 def get_imagenetmini(
     data_path: str | os.PathLike[str],
     preprocessing,
@@ -22,15 +24,16 @@ def get_imagenetmini(
     """
     # TODO: change labels based on the model
     labels_path = "input_files/resnet50_predicted_targets.pt"
-    transform = T.Compose([
-        T.Resize(256),
-        T.CenterCrop(224),
-        T.ToTensor(),
-        T.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
-        )
-    ])
+    # transform = T.Compose([
+    #     T.Resize(256),
+    #     T.CenterCrop(224),
+    #     T.ToTensor(),
+    #     T.Normalize(
+    #         mean=[0.485, 0.456, 0.406],
+    #         std=[0.229, 0.224, 0.225]
+    #     )
+    # ])
+    transform = timm.data.create_transform(**data_config)
     return ImageNetMiniDataset(
         root=data_path,
         labels_path=labels_path,
