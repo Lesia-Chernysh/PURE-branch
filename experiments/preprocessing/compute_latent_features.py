@@ -130,19 +130,24 @@ def prepare_vilt_inputs(
     model,
     device,
 ):
-    """Move ViLT inputs to the device and create differentiable inputs."""
+    inputs = {
+        name: value.to(device)
+        for name, value in dict(inputs).items()
+    }
 
-    inputs = move_batch_to_device(dict(inputs), device)
+    pixel_values = (
+        inputs["pixel_values"]
+        .detach()
+        .to(dtype=torch.float32)
+        .requires_grad_(True)
+    )
 
-    pixel_values = inputs["pixel_values"].detach()
-    pixel_values.requires_grad_(True)
-
-    # Token IDs are integer lookup indices and cannot receive gradients.
-    # Compute their embeddings and attribute with respect to those instead.
-    input_embeds = model.get_input_embeddings()(
-        inputs["input_ids"]
-    ).detach()
-    input_embeds.requires_grad_(True)
+    input_embeds = (
+        model.get_input_embeddings()(inputs["input_ids"])
+        .detach()
+        .to(dtype=torch.float32)
+        .requires_grad_(True)
+    )
 
     additional_forward_kwargs = {
         "token_type_ids": inputs["token_type_ids"],
