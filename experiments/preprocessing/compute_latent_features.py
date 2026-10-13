@@ -195,6 +195,10 @@ def main(model_name,
             conditions = [
                 {layer_name: [int(neuron)]}
             ]
+            if model_name == "vilt":
+                # for attribution, we take crp_model, which has different layer names than the original model
+                start_layer = "model." + start_layer
+                layer_names = ["model." + l for l in layer_names]
     
             attr = attribution(
                 x,
