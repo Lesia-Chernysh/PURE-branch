@@ -33,6 +33,7 @@ from utils.helper import (get_layer_names_model, load_config, reference_lengths,
 from utils.render import vis_opaque_img_border
 from utils.lrp_composites import ReferenceEpsilonPlusFlat
 import torch
+import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 import zennit.image as zimage
