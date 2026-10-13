@@ -777,7 +777,7 @@ def get_reference_images(
         "attribute": True,
         "rf": True,
         "batch_size": min(batch_size, n_valid),
-        "plot_fn": vis_opaque_img_border,
+        "plot_fn": None,
     }
 
     if model_name == "vilt":
