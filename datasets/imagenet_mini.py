@@ -225,7 +225,7 @@ class ImageQuestionAnswerDataset(Dataset):
         #label = path_to_class_name(path)
         label = self.predicted_labels[idx]
 
-        return idx, image, self.question, label
+        return image, self.question, label
 
 # labels for the dataset where predicted by ResNet50
 dataset_labels = {}
