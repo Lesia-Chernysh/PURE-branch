@@ -78,23 +78,23 @@ def get_layer_names_model(model: torch.nn.Module, model_name: str) -> List[str]:
         ]
     elif model_name == "vilt":
         selected_names = [
-            "model.vilt.encoder.layer.1.output.dense",
-            "model.vilt.encoder.layer.2.output.dense",
-            "model.vilt.encoder.layer.3.output.dense",
-            "model.vilt.encoder.layer.4.output.dense",
-            "model.vilt.encoder.layer.5.output.dense",
-            "model.vilt.encoder.layer.6.output.dense",
-            "model.vilt.encoder.layer.7.output.dense",
-            "model.vilt.encoder.layer.8.output.dense",
-            "model.vilt.encoder.layer.9.output.dense",
-            "model.vilt.encoder.layer.10.output.dense",
-            "model.vilt.encoder.layer.11.output.dense",
+            "vilt.encoder.layer.1.output.dense",
+            "vilt.encoder.layer.2.output.dense",
+            "vilt.encoder.layer.3.output.dense",
+            "vilt.encoder.layer.4.output.dense",
+            "vilt.encoder.layer.5.output.dense",
+            "vilt.encoder.layer.6.output.dense",
+            "vilt.encoder.layer.7.output.dense",
+            "vilt.encoder.layer.8.output.dense",
+            "vilt.encoder.layer.9.output.dense",
+            "vilt.encoder.layer.10.output.dense",
+            "vilt.encoder.layer.11.output.dense",
         ]
         
         layer_names = []
         
         for name, layer in model.named_modules():
-            print(name)
+            #print(name)
             if name in selected_names:
                 layer_names.append(name)
 
