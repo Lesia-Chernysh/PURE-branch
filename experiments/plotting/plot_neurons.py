@@ -224,6 +224,8 @@ elif model_name == "vilt":
     lrp_rule_composite.register(model)
 
     crp_model = ViltCRPWrapper(model)
+    crp_model = crp_model.to(device)
+    crp_model.eval()
 
     tcc = TransformerChannelConcept()
     layer_map = {layer: tcc for layer in layer_names} 
@@ -248,11 +250,39 @@ elif model_name == "vilt":
     )
 
     predicted_targets = torch.load("vilt_predicted_targets.pt")
-  
-    fv = PredictionFeatureVisualization(tcc, attribution, dataset, layer_map,
-                                  preprocess_fn=None,
-                                  path=fv_name, device=device,
-                                  predicted_targets=predicted_targets)
+
+    processor = ViltProcessor.from_pretrained(
+            "dandelin/vilt-b32-finetuned-vqa"
+    )
+
+    # ViltCRPWrapper stores the original model under `model`.
+    attribution_layer_names = [
+            name if name.startswith("model.") else f"model.{name}"
+            for name in original_layer_names
+    ]
+    attribution_layer_name = (
+            requested_layer_name
+            if requested_layer_name.startswith("model.")
+            else f"model.{requested_layer_name}"
+    )
+
+    layer_map = {
+            layer: concept
+            for layer in attribution_layer_names
+    }
+
+    fv = PredictionFeatureVisualization(
+            attribution,
+            feature_dataset,
+            layer_map,
+            processor,
+            path=f"crp_files/{fname}",
+            device=device,
+            max_target="sum",
+            abs_norm=True,
+            predicted_targets=predicted_targets,
+    )
+
 
 if not os.path.isdir(fv.RelMax.PATH) or not os.listdir(fv.RelMax.PATH):
     raise FileNotFoundError(
