@@ -190,6 +190,59 @@ elif model_name == "vit":
                                   path=fv_name, device=device,
                                   predicted_targets=predicted_targets)
 
+elif model_name == "vilt":
+    from crp.concepts import TransformerChannelConcept
+    from crp.visualization import PredictionFeatureVisualization
+    from lxt.explicit.models.vilt import attnlrp as lrp_rule_composite
+    from transformers.activations import gelu, GELUActivation
+    ################# LXT
+    import lxt.explicit.modules as lm
+    import lxt.explicit.functional as lf
+    import lxt.explicit.rules as rules
+    from lxt.explicit.core import Composite
+    from zennit.composites import LayerMapComposite
+    import zennit.rules as z_rules
+
+    class GeLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return gelu(x)
+
+    lrp_rule_composite.register(vilt_vqa)
+
+    crp_model = ViltCRPWrapper(vilt_vqa)
+
+    tcc = TransformerChannelConcept()
+    layer_map = {layer: tcc for layer in layer_names} 
+  
+    composite = Composite(
+        {
+            #nn.Linear: rules.EpsilonRule,
+            nn.Tanh: rules.IdentityRule,
+            GELUActivation: rules.IdentityRule,
+            GeLU: rules.IdentityRule,
+        },
+        zennit_composite=LayerMapComposite([
+            (nn.Conv2d, z_rules.Gamma(100)),
+            (nn.Linear, z_rules.Gamma(0.05)),
+        ])
+    )
+
+    attribution = CondAttribution(
+        crp_model,
+        device,
+        no_param_grad=True
+    )
+
+    predicted_targets = torch.load("vilt_predicted_targets.pt")
+  
+    fv = PredictionFeatureVisualization(tcc, attribution, dataset, layer_map,
+                                  preprocess_fn=None,
+                                  path=fv_name, device=device,
+                                  predicted_targets=predicted_targets)
+
 if not os.path.isdir(fv.RelMax.PATH) or not os.listdir(fv.RelMax.PATH):
     raise FileNotFoundError(
         f"No CRP artifacts found at {fv.RelMax.PATH}. Run crp_run for the "
