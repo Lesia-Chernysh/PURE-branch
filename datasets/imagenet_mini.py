@@ -197,19 +197,11 @@ class ImageNetMiniDataset(Dataset):
         """Identity operation: this adapter applies no default augmentation."""
         return data
 
-def get_imagenetmini_for_vqa(
-    data_path: str | os.PathLike[str],
-    dataset,
-    predicted_labels,
-    preprocessing,
-    split
-):
-    dataset = get_imagenetmini(
-        data_path,
-        preprocessing,
-        split
+def get_imagenetmini_for_vqa(dataset, predicted_labels):
+    return ImageQuestionAnswerDataset(
+        dataset=dataset,
+        predicted_labels=predicted_labels,
     )
-    return ImageQuestionAnswerDataset(dataset, predicted_labels)
 
 class ImageQuestionAnswerDataset(Dataset):
     def __init__(self, dataset, predicted_labels):
