@@ -740,8 +740,11 @@ def get_reference_images(
     if model_name == "vilt":
         # ViLTFeatureVisualization.get_max_reference()
         # does not accept `composite`.
+        print(f"layer_name before: {layer_name}")
         if layer_name.startswith("model"):
             layer_name = layer_name.replace("model.", "")
+            common_kwargs[layer_name] = layer_name
+        print(f"layer_name after: {layer_name}")
         references = fv.get_max_reference(
             **common_kwargs,
         )
