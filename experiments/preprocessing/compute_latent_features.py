@@ -115,7 +115,7 @@ def main(model_name,
         attribution = CondAttribution(crp_model, device, no_param_grad=True)
         layer_map = {layer: concept for layer in layer_names}
 
-        fv = ViLTFeatureVisualization(
+        fv = PredictionFeatureVisualization(
             attribution,
             dataset,
             layer_map,
