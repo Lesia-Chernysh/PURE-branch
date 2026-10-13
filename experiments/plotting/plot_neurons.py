@@ -260,6 +260,10 @@ elif model_name == "vilt":
         model,
         model_name,
     )
+    requested_layer_name = validate_layer_name(
+        layer_name or original_layer_names[-1],
+        original_layer_names,
+    )
     
     attribution_layer_names = [
             name if name.startswith("model.") else f"model.{name}"
