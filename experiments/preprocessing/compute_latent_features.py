@@ -212,6 +212,12 @@ def main(
     if model_name == "vit":
         from crp.concepts import TransformerChannelConcept
         from crp.visualization import PredictionFeatureVisualization
+        from lxt.explicit.models.vilt import (
+            attnlrp,
+        )
+
+        # Required: install LXT's AttnLRP backward rules.
+        attnlrp.register(model)
 
         concept = TransformerChannelConcept()
         attribution = CondAttribution(concept, model)
