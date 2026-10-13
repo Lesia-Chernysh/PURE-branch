@@ -32,6 +32,8 @@ from utils.helper import (get_layer_names_model, load_config, reference_lengths,
                           validate_layer_name)
 from utils.render import vis_opaque_img_border
 from utils.lrp_composites import ReferenceEpsilonPlusFlat
+from models.vilt import ViltCRPWrapper
+
 import torch
 import torch.nn as nn
 import numpy as np
