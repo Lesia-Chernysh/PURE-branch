@@ -61,12 +61,9 @@ def main(model_name,
         else:
             predicted_labels = torch.load("qwen_predicted_targets.pt")
         
-        dataset = get_imagenetmini_for_vqa(
-            data_path=data_path,
+        vqa_dataset = get_imagenetmini_for_vqa(
             dataset=dataset,
             predicted_labels=predicted_labels,
-            preprocessing=True, 
-            split=split,
         )
     
 
