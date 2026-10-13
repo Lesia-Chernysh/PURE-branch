@@ -199,6 +199,8 @@ def main(model_name,
                 {layer_name: [int(neuron)]}
             ]
             if model_name == "vilt":
+                x["input_embeds"] = self.attribution.model.hf_model.get_input_embeddings()(x.input_ids).detach().requires_grad_(True)
+        
                 # for attribution, we take crp_model, which has different layer names than the original model
                 layer_name = "model." + layer_name
                 layer_names = ["model." + l for l in layer_names]
