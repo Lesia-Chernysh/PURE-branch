@@ -79,6 +79,7 @@ class ImageNetMiniDataset(Dataset):
         self.root = Path(root).expanduser().resolve()
         print(self.root)
         self.split = split
+        print(f"split: {self.split}")
         split_dirs = self._SPLIT_DIRS[split]
         if isinstance(split_dirs, str):
             split_dirs = (split_dirs,)
