@@ -94,6 +94,7 @@ def get_layer_names_model(model: torch.nn.Module, model_name: str) -> List[str]:
         layer_names = []
         
         for name, layer in model.named_modules():
+            print(name)
           if name in selected_names:
             layer_names.append(name)
 
