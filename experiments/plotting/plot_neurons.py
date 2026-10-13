@@ -206,6 +206,7 @@ elif model_name == "vilt":
     from crp.visualization import PredictionFeatureVisualization
     from lxt.explicit.models.vilt import attnlrp as lrp_rule_composite
     from transformers.activations import gelu, GELUActivation
+    from transformers import ViltProcessor
     ################# LXT
     import lxt.explicit.modules as lm
     import lxt.explicit.functional as lf
