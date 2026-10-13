@@ -115,6 +115,8 @@ def main(model_name,
         attribution = CondAttribution(crp_model, device, no_param_grad=True)
         layer_map = {layer: concept for layer in layer_names}
 
+        predicted_targets = torch.load("vilt_predicted_targets.pt")
+
         fv = PredictionFeatureVisualization(
             attribution,
             dataset,
@@ -123,6 +125,7 @@ def main(model_name,
             path=f"crp_files/{fname}",
             device=device,
             max_target="sum", abs_norm=True,
+            predicted_targets=predicted_targets
         )
         
     else:
