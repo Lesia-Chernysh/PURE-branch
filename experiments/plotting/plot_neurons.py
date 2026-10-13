@@ -718,6 +718,7 @@ def prepare_model_and_visualization(
 
 def get_reference_images(
     fv,
+    model_name,
     neuron,
     layer_name,
     mode,
@@ -725,16 +726,30 @@ def get_reference_images(
     batch_size,
     composite,
 ):
-    references = fv.get_max_reference(
-        [neuron],
-        layer_name,
-        mode,
-        (0, n_valid),
-        composite=composite,
-        rf=True,
-        batch_size=min(batch_size, n_valid),
-        plot_fn=vis_opaque_img_border,
-    )
+    common_kwargs = {
+        "concept_ids": [neuron],
+        "layer_name": layer_name,
+        "mode": mode,
+        "r_range": (0, n_valid),
+        "attribute": False,
+        "rf": True,
+        "batch_size": min(batch_size, n_valid),
+        "plot_fn": vis_opaque_img_border,
+    }
+
+    if model_name == "vilt":
+        # ViLTFeatureVisualization.get_max_reference()
+        # does not accept `composite`.
+        references = fv.get_max_reference(
+            **common_kwargs,
+        )
+    else:
+        # The standard FeatureVisualization implementation
+        # requires or supports the composite argument.
+        references = fv.get_max_reference(
+            **common_kwargs,
+            composite=composite,
+        )
 
     if neuron not in references:
         raise KeyError(
