@@ -102,7 +102,7 @@ def main(model_name,
                                   predicted_targets=predicted_targets)
     elif model_name == "vilt":
         from crp.concepts import TransformerChannelConcept
-        from crp.visualization import ViLTFeatureVisualization
+        from crp.visualization import ViLTFeatureVisualization, PredictionFeatureVisualization
         from lxt.explicit.models.vilt import ViltForQuestionAnswering, attnlrp as lrp_rule_composite
         from models.vilt import ViltCRPWrapper
         from transformers import ViltProcessor
