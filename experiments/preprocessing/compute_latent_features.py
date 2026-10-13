@@ -179,7 +179,7 @@ def main(model_name,
             num_workers=8,
         )
     
-        for x, _ in dataloader:
+        for x, _, _ in dataloader:
             x = x.to(device).requires_grad_()
     
             conditions = [
