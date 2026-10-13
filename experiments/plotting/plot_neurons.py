@@ -13,7 +13,15 @@ import zennit.rules as z_rules
 
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
-from crp.visualization import FeatureVisualization
+try:
+    from crp.visualization import FeatureVisualization
+except ImportError:
+    # for ViLT
+    try:
+        from crp.visualization import ViLTFeatureVisualization
+    except ImportError:
+        # for Qwen
+        from crp.visualization import QwenFeatureVisualization
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from safetensors import safe_open
 from scipy import stats
