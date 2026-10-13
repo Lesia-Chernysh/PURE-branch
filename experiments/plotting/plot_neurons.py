@@ -212,11 +212,11 @@ elif model_name == "vilt":
     import zennit.rules as z_rules
 
     class GeLU(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return gelu(x)
+        def __init__(self):
+            super().__init__()
+    
+        def forward(self, x):
+            return gelu(x)
 
     lrp_rule_composite.register(vilt_vqa)
 
