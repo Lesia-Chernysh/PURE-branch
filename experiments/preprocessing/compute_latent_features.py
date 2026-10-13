@@ -197,7 +197,7 @@ def main(model_name,
             ]
             if model_name == "vilt":
                 # for attribution, we take crp_model, which has different layer names than the original model
-                start_layer = "model." + start_layer
+                layer_name = "model." + layer_name
                 layer_names = ["model." + l for l in layer_names]
     
             attr = attribution(
