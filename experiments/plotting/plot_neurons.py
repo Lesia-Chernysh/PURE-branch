@@ -229,7 +229,6 @@ elif model_name == "vilt":
     crp_model.eval()
 
     tcc = TransformerChannelConcept()
-    layer_map = {layer: tcc for layer in layer_names} 
   
     composite = Composite(
         {
@@ -257,6 +256,11 @@ elif model_name == "vilt":
     )
 
     # ViltCRPWrapper stores the original model under `model`.
+    original_layer_names = get_layer_names_model(
+        model,
+        model_name,
+    )
+    
     attribution_layer_names = [
             name if name.startswith("model.") else f"model.{name}"
             for name in original_layer_names
