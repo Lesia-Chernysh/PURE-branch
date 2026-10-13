@@ -743,8 +743,9 @@ def get_reference_images(
         print(f"layer_name before: {layer_name}")
         if layer_name.startswith("model"):
             layer_name = layer_name.replace("model.", "")
-            common_kwargs[layer_name] = layer_name
+            common_kwargs["layer_name"] = layer_name
         print(f"layer_name after: {layer_name}")
+        
         references = fv.get_max_reference(
             **common_kwargs,
         )
