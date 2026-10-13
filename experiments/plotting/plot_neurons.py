@@ -969,6 +969,7 @@ def main():
 
         reference_images = get_reference_images(
             fv=fv,
+            model_name=model_name,
             neuron=neuron,
             layer_name=reference_layer_name,
             mode=args.mode,
