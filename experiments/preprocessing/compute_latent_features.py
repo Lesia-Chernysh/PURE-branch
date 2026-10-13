@@ -178,8 +178,18 @@ def main(model_name,
             shuffle=False,
             num_workers=8,
         )
+        batch = next(iter(dataloader))
+
+        print(type(batch))
+        
+        if isinstance(batch, (tuple, list)):
+            print("Number of fields:", len(batch))
+            for i, field in enumerate(batch):
+                print(i, type(field), getattr(field, "shape", None))
+        elif isinstance(batch, dict):
+            print("Keys:", batch.keys())
     
-        for (x, _, _) in dataloader:
+        for x, *_ in dataloader:
             x = x.to(device).requires_grad_()
     
             conditions = [
