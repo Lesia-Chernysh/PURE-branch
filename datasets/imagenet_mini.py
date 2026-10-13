@@ -211,6 +211,7 @@ class ImageQuestionAnswerDataset(Dataset):
         self.dataset = dataset
         self.question = "What is on the image?"
         self.classes = None
+        self.num_classes = 1000
         self.predicted_labels = predicted_labels
 
     def __len__(self):
