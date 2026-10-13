@@ -219,9 +219,9 @@ elif model_name == "vilt":
         def forward(self, x):
             return gelu(x)
 
-    lrp_rule_composite.register(vilt_vqa)
+    lrp_rule_composite.register(model)
 
-    crp_model = ViltCRPWrapper(vilt_vqa)
+    crp_model = ViltCRPWrapper(model)
 
     tcc = TransformerChannelConcept()
     layer_map = {layer: tcc for layer in layer_names} 
