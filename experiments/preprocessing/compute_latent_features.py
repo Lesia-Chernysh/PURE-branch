@@ -181,16 +181,6 @@ def main(model_name,
             shuffle=False,
             num_workers=8,
         )
-        batch = next(iter(dataloader))
-
-        print(type(batch))
-        
-        if isinstance(batch, (tuple, list)):
-            print("Number of fields:", len(batch))
-            for i, field in enumerate(batch):
-                print(i, type(field), getattr(field, "shape", None))
-        elif isinstance(batch, dict):
-            print("Keys:", batch.keys())
     
         for x, *_ in dataloader:
             x = x.to(device).requires_grad_()
@@ -199,7 +189,7 @@ def main(model_name,
                 {layer_name: [int(neuron)]}
             ]
             if model_name == "vilt":
-                inputs, multi_targets = fv.get_data_concurrently(sample_indices)
+                inputs, multi_targets = fv.get_data_concurrently(most_act_sample_ids)
 
                 # handle multiple targets (vqa has multiple answers per question)
                 target_counts = list(map(len, multi_targets))
