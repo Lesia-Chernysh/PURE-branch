@@ -9,7 +9,15 @@ import yaml
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
 from crp.helper import load_maximization
-from crp.visualization import FeatureVisualization
+try:
+    from crp.visualization import FeatureVisualization
+except ImportError:
+    # for ViLT
+    try:
+        from crp.visualization import ViLTFeatureVisualization
+    except ImportError:
+        # for Qwen
+        from crp.visualization import QwenFeatureVisualization
 
 from safetensors.torch import save_file
 from torch.utils.data import DataLoader
