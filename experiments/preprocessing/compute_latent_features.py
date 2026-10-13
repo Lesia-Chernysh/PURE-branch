@@ -199,20 +199,52 @@ def main(model_name,
                 {layer_name: [int(neuron)]}
             ]
             if model_name == "vilt":
-                x["input_embeds"] = attribution.model.hf_model.get_input_embeddings()(x.input_ids).detach().requires_grad_(True)
-        
+                inputs, multi_targets = fv.get_data_concurrently(sample_indices)
+
+                # handle multiple targets (vqa has multiple answers per question)
+                target_counts = list(map(len, multi_targets))
+                targets = np.array(list(itertools.chain(*multi_targets))) # flatten 2d list
+                # copy data for every target in target list 
+                for key, input_batch in inputs.items():
+                    inputs[key] = input_batch.repeat_interleave(torch.tensor(target_counts).cuda(), dim=0)
+                sample_indices = np.array(sample_indices).repeat(target_counts, axis=0)
+                
+                #conditions = [{attribution.MODEL_OUTPUT_NAME: [t]} for t in targets]
+                # dict_inputs is linked to FeatHooks
+                dict_inputs["sample_indices"] = sample_indices
+                dict_inputs["targets"] = targets
+                additional_forward_kwargs = {"token_type_ids":inputs.token_type_ids, "attention_mask":inputs.attention_mask, "pixel_mask":inputs.pixel_mask}
+                dict_inputs["additional_forward_kwargs"] = additional_forward_kwargs
+    
+                # composites are already registered before
+                self.attribution((inputs.pixel_values, inputs.input_embeds), conditions, None, exclude_parallel=False, additional_forward_kwargs=additional_forward_kwargs)
+
+                
                 # for attribution, we take crp_model, which has different layer names than the original model
                 layer_name = "model." + layer_name
                 layer_names = ["model." + l for l in layer_names]
+
+                attr = attribution(
+                    (inputs.pixel_values, inputs.input_embeds),
+                    conditions,
+                    grad_composite,
+                    record_layer=layer_names,
+                    start_layer=layer_name,
+                    init_rel=lambda act: act.clamp(min=0),
+                    exclude_parallel=False, 
+                    additional_forward_kwargs=additional_forward_kwargs
+                )
+
+            else:
     
-            attr = attribution(
-                x,
-                conditions,
-                grad_composite,
-                record_layer=layer_names,
-                start_layer=layer_name,
-                init_rel=lambda act: act.clamp(min=0),
-            )
+                attr = attribution(
+                    x,
+                    conditions,
+                    grad_composite,
+                    record_layer=layer_names,
+                    start_layer=layer_name,
+                    init_rel=lambda act: act.clamp(min=0),
+                )
     
             # Conditional relevance arriving at the preceding layer.
             lower_gradient = (
