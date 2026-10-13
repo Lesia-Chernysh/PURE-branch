@@ -14,6 +14,7 @@ import timm
 
 def get_imagenetmini(
     data_path: str | os.PathLike[str],
+    preprocessing: bool,
     transform: bool= True,
     split: str = "train"
 ) -> "ImageNetMiniDataset":
