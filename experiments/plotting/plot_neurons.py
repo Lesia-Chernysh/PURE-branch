@@ -276,7 +276,7 @@ elif model_name == "vilt":
     )
 
     layer_map = {
-            layer: concept
+            layer: tcc
             for layer in attribution_layer_names
     }
 
