@@ -178,6 +178,8 @@ def main(model_name,
             shuffle=False,
             num_workers=8,
         )
+        print(len(dataloader))
+        print(len(dataloader[0]))
     
         for x, _, _ in dataloader:
             x = x.to(device).requires_grad_()
