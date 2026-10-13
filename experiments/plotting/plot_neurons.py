@@ -26,17 +26,13 @@ from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from safetensors import safe_open
 from scipy import stats
 from sklearn.cluster import KMeans
-from torch.utils.data import Dataset
 from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import make_grid
 from zennit.canonizers import SequentialMergeBatchNorm
 from zennit.composites import EpsilonPlusFlat, LayerMapComposite
 
 from datasets import get_dataset
-from models import (
-    get_canonizer,
-    get_fn_model_loader,
-)
+from models import get_canonizer, get_fn_model_loader
 from utils.helper import (
     get_layer_names_model,
     load_config,
@@ -47,11 +43,102 @@ from utils.lrp_composites import ReferenceEpsilonPlusFlat
 from utils.render import vis_opaque_img_border
 
 
+class LayerNameRemappingAttribution:
+    """
+    Proxy around CondAttribution.
+
+    CRP artifacts and FeatureVisualization use original ViLT names:
+
+        vilt.encoder.layer.11.output.dense
+
+    ViltCRPWrapper exposes the same module as:
+
+        model.vilt.encoder.layer.11.output.dense
+
+    This proxy adds `model.` only when attribution is executed.
+    """
+
+    def __init__(self, attribution, prefix="model."):
+        self.attribution = attribution
+        self.prefix = prefix
+
+        self._model_modules = set(
+            dict(attribution.model.named_modules())
+        )
+
+    def __getattr__(self, name):
+        return getattr(self.attribution, name)
+
+    def resolve_layer_name(self, layer_name):
+        if not isinstance(layer_name, str):
+            return layer_name
+
+        if layer_name in self._model_modules:
+            return layer_name
+
+        prefixed_name = f"{self.prefix}{layer_name}"
+
+        if prefixed_name in self._model_modules:
+            return prefixed_name
+
+        # Keep special CRP keys such as the model-output key unchanged.
+        return layer_name
+
+    def remap_conditions(self, conditions):
+        if conditions is None:
+            return None
+
+        remapped_conditions = []
+
+        for condition in conditions:
+            remapped_condition = {
+                self.resolve_layer_name(key): value
+                for key, value in condition.items()
+            }
+            remapped_conditions.append(remapped_condition)
+
+        return remapped_conditions
+
+    def __call__(self, *args, **kwargs):
+        args = list(args)
+
+        # CondAttribution(data, conditions, composite, ...)
+        if len(args) >= 2:
+            args[1] = self.remap_conditions(args[1])
+        elif "conditions" in kwargs:
+            kwargs["conditions"] = self.remap_conditions(
+                kwargs["conditions"]
+            )
+
+        if kwargs.get("start_layer") is not None:
+            kwargs["start_layer"] = self.resolve_layer_name(
+                kwargs["start_layer"]
+            )
+
+        if kwargs.get("record_layer") is not None:
+            record_layer = kwargs["record_layer"]
+
+            if isinstance(record_layer, str):
+                kwargs["record_layer"] = (
+                    self.resolve_layer_name(record_layer)
+                )
+            else:
+                kwargs["record_layer"] = [
+                    self.resolve_layer_name(name)
+                    for name in record_layer
+                ]
+
+        return self.attribution(
+            *args,
+            **kwargs,
+        )
+
+
 def get_parser():
     parser = ArgumentParser(
         description=(
             "Display reference images and latent clusters for "
-            "selected model neurons."
+            "selected neurons."
         )
     )
 
@@ -62,21 +149,14 @@ def get_parser():
     parser.add_argument(
         "--neurons",
         default="1,2,3,4,5",
-        help="Comma-separated neuron indices.",
     )
     parser.add_argument(
         "--embeddings",
         default="pure",
         choices=["pure", "CLIP", "activations"],
     )
-    parser.add_argument(
-        "--split",
-        default=None,
-    )
-    parser.add_argument(
-        "--layer_name",
-        default=None,
-    )
+    parser.add_argument("--split", default=None)
+    parser.add_argument("--layer_name", default=None)
     parser.add_argument(
         "--num_clusters",
         default=2,
@@ -105,9 +185,6 @@ def get_parser():
     args = parser.parse_args()
 
     config = load_config(args.config_file)
-    config["config_name"] = os.path.basename(
-        args.config_file
-    )[:-5]
 
     for key, value in config.items():
         if not hasattr(args, key) or getattr(args, key) is None:
@@ -130,18 +207,16 @@ def safe_torch_load(path):
         )
 
 
-def get_dataset_preprocessing(dataset):
+def get_preprocessing(dataset):
     return getattr(dataset, "preprocessing", None)
 
 
 def to_display_image(image):
-    """Convert PIL, NumPy, or tensor images to RGB PIL images."""
-
     if hasattr(image, "convert"):
         return image.convert("RGB")
 
     if isinstance(image, np.ndarray):
-        array = image
+        array = image.copy()
 
         if array.ndim == 3 and array.shape[0] in {1, 3, 4}:
             array = np.transpose(array, (1, 2, 0))
@@ -176,8 +251,7 @@ def to_display_image(image):
         if tensor.ndim == 4:
             if tensor.shape[0] != 1:
                 raise ValueError(
-                    "Cannot convert a batch containing more than "
-                    f"one image: {tuple(tensor.shape)}."
+                    f"Expected one image, got {tensor.shape[0]}."
                 )
             tensor = tensor[0]
 
@@ -228,14 +302,14 @@ def make_image_grid(
     resize = torchvision.transforms.Resize(size)
     pil_to_tensor = torchvision.transforms.PILToTensor()
 
-    tensors = [
+    image_tensors = [
         pil_to_tensor(resize(image))
         for image in images
     ]
 
     grid = make_grid(
-        tensors,
-        nrow=min(maximum, len(tensors)),
+        image_tensors,
+        nrow=min(maximum, len(image_tensors)),
         padding=0,
     )
 
@@ -272,17 +346,12 @@ def load_latent_representations(
         )
         tensor_key = "mean_act"
 
-    elif embedding_type == "CLIP":
+    else:
         file_path = (
             base_path
             / f"latent_embeddings_{layer_name}_{split}.safetensors"
         )
         tensor_key = "CLIP"
-
-    else:
-        raise ValueError(
-            f"Unknown embedding type: {embedding_type}"
-        )
 
     if not file_path.is_file():
         raise FileNotFoundError(
@@ -311,14 +380,14 @@ def load_latent_representations(
         tensor_key,
     )
 
-    non_finite = ~torch.isfinite(embeddings)
+    if not torch.isfinite(embeddings).all():
+        count = (
+            ~torch.isfinite(embeddings)
+        ).sum().item()
 
-    if non_finite.any():
-        count = non_finite.sum().item()
         raise FloatingPointError(
-            f"{file_path} contains {count} non-finite values "
-            f"in {tensor_key!r}. Recompute the latent features "
-            "before plotting them."
+            f"Found {count} non-finite values in "
+            f"{file_path}:{tensor_key}."
         )
 
     return embeddings, lengths
@@ -332,16 +401,13 @@ def compute_umap(neuron_embeddings):
         .numpy()
     )
 
-    n_samples = len(values)
-
-    if n_samples < 3:
+    if len(values) < 3:
         raise ValueError(
-            "At least three reference samples are required "
-            "for UMAP."
+            "At least three references are required for UMAP."
         )
 
     reducer = umap.UMAP(
-        n_neighbors=min(6, n_samples - 1),
+        n_neighbors=min(6, len(values) - 1),
         min_dist=0.3,
         spread=1.0,
         random_state=123,
@@ -374,10 +440,7 @@ def draw_density(axis, coordinates):
         ])
         values = np.vstack([x, y])
 
-        kernel = stats.gaussian_kde(
-            values,
-            0.5,
-        )
+        kernel = stats.gaussian_kde(values, 0.5)
 
         density = kernel(positions).reshape(
             grid_x.shape
@@ -388,13 +451,11 @@ def draw_density(axis, coordinates):
             extent=[xmin, xmax, ymin, ymax],
             cmap="Greys",
             alpha=0.3,
-            extend="min",
             vmax=density.max(),
             zorder=0,
         )
 
     except (np.linalg.LinAlgError, ValueError):
-        # KDE may fail for collinear or identical points.
         pass
 
     axis.scatter(
@@ -403,7 +464,6 @@ def draw_density(axis, coordinates):
         alpha=0.7,
         color="black",
         s=10,
-        zorder=1,
     )
 
     axis.set_xlim(xmin, xmax)
@@ -412,24 +472,7 @@ def draw_density(axis, coordinates):
     return x, y
 
 
-def validate_modules(model, layer_names):
-    available_modules = dict(model.named_modules())
-
-    missing = [
-        name
-        for name in layer_names
-        if name not in available_modules
-    ]
-
-    if missing:
-        raise ValueError(
-            "These requested attribution layers do not exist "
-            "in the wrapped model:\n"
-            + "\n".join(missing[:30])
-        )
-
-
-def prepare_model_and_visualization(
+def configure_visualization(
     args,
     dataset,
     model,
@@ -438,26 +481,24 @@ def prepare_model_and_visualization(
     fv_name,
     device,
 ):
-    """Configure CRP attribution for the selected architecture."""
-
     model_name = args.model_name
 
     feature_dataset = dataset
-    reference_layer_name = layer_name
     composite = None
+
+    # Artifact and FeatureVisualization layer name.
+    reference_layer_name = layer_name
 
     if model_name == "resnet50_transformers":
         concept = ChannelConcept()
 
         layer_map = {
-            layer: concept
-            for layer in layer_names
+            name: concept
+            for name in layer_names
         }
 
-        canonizers = get_canonizer(model_name)
-
         composite = ReferenceEpsilonPlusFlat(
-            canonizers=canonizers,
+            canonizers=get_canonizer(model_name),
             skip_layer=layer_name,
             epsilon=1e-6,
             zero_params=["bias"],
@@ -469,7 +510,7 @@ def prepare_model_and_visualization(
             attribution,
             dataset,
             layer_map,
-            preprocess_fn=get_dataset_preprocessing(dataset),
+            preprocess_fn=get_preprocessing(dataset),
             path=fv_name,
             max_target="sum",
             abs_norm=True,
@@ -479,8 +520,8 @@ def prepare_model_and_visualization(
         concept = ChannelConcept()
 
         layer_map = {
-            layer: concept
-            for layer in layer_names
+            name: concept
+            for name in layer_names
         }
 
         composite = ReferenceEpsilonPlusFlat(
@@ -494,7 +535,7 @@ def prepare_model_and_visualization(
             attribution,
             dataset,
             layer_map,
-            preprocess_fn=get_dataset_preprocessing(dataset),
+            preprocess_fn=get_preprocessing(dataset),
             path=fv_name,
             max_target="sum",
             abs_norm=True,
@@ -515,7 +556,6 @@ def prepare_model_and_visualization(
         )
         from timm.layers.attention import Attention
         from timm.layers.norm import LayerNorm as TimmLayerNorm
-
         from utils.attnlrp_timm_vit_conservative import (
             identity_forward,
             timm_attention_forward,
@@ -524,8 +564,8 @@ def prepare_model_and_visualization(
         concept = TransformerChannelConcept()
 
         layer_map = {
-            layer: concept
-            for layer in layer_names
+            name: concept
+            for name in layer_names
         }
 
         attribution = CondAttribution(
@@ -604,13 +644,12 @@ def prepare_model_and_visualization(
     elif model_name == "vilt":
         from crp.concepts import TransformerChannelConcept
         from crp.visualization import PredictionFeatureVisualization
-        from lxt.explicit.models.vilt import attnlrp
-        from transformers import ViltProcessor
-
         from datasets.imagenet_mini import (
             get_imagenetmini_for_vqa,
         )
+        from lxt.explicit.models.vilt import attnlrp
         from models.vilt import ViltCRPWrapper
+        from transformers import ViltProcessor
 
         predicted_targets = safe_torch_load(
             "vilt_predicted_targets.pt"
@@ -625,7 +664,6 @@ def prepare_model_and_visualization(
             "dandelin/vilt-b32-finetuned-vqa"
         )
 
-        # Register AttnLRP before creating the CRP wrapper.
         attnlrp.register(model)
 
         crp_model = ViltCRPWrapper(model)
@@ -634,40 +672,48 @@ def prepare_model_and_visualization(
 
         concept = TransformerChannelConcept()
 
-        wrapped_layer_names = [
-            (
-                name
-                if name.startswith("model.")
-                else f"model.{name}"
-            )
-            for name in layer_names
-        ]
-
-        reference_layer_name = (
-            layer_name
-            if layer_name.startswith("model.")
-            else f"model.{layer_name}"
-        )
-
-        validate_modules(
-            crp_model,
-            wrapped_layer_names,
-        )
-
+        # FeatureVisualization uses artifact names without "model.".
         layer_map = {
-            wrapped_layer: concept
-            for wrapped_layer in wrapped_layer_names
+            name: concept
+            for name in layer_names
         }
 
-        attribution = CondAttribution(
+        base_attribution = CondAttribution(
             crp_model,
             device,
             no_param_grad=True,
         )
 
-        # AttnLRP is already registered. Avoid registering a
-        # second high-Gamma composite during visualization.
+        # Add "model." only inside CondAttribution calls.
+        attribution = LayerNameRemappingAttribution(
+            base_attribution,
+            prefix="model.",
+        )
+
+        resolved_name = attribution.resolve_layer_name(
+            layer_name
+        )
+
+        if resolved_name == layer_name:
+            available = dict(crp_model.named_modules())
+
+            if layer_name not in available:
+                raise KeyError(
+                    f"Could not resolve ViLT layer {layer_name!r} "
+                    "inside ViltCRPWrapper."
+                )
+
+        print(
+            "ViLT artifact layer:",
+            layer_name,
+        )
+        print(
+            "ViLT attribution layer:",
+            resolved_name,
+        )
+
         composite = None
+        reference_layer_name = layer_name
 
         fv = PredictionFeatureVisualization(
             attribution,
@@ -682,18 +728,15 @@ def prepare_model_and_visualization(
         )
 
     else:
-        # Generic CNN fallback.
         concept = ChannelConcept()
 
         layer_map = {
-            layer: concept
-            for layer in layer_names
+            name: concept
+            for name in layer_names
         }
 
-        canonizers = get_canonizer(model_name)
-
         composite = EpsilonPlusFlat(
-            canonizers=canonizers,
+            canonizers=get_canonizer(model_name),
         )
 
         attribution = CondAttribution(model)
@@ -702,7 +745,7 @@ def prepare_model_and_visualization(
             attribution,
             dataset,
             layer_map,
-            preprocess_fn=get_dataset_preprocessing(dataset),
+            preprocess_fn=get_preprocessing(dataset),
             path=fv_name,
             max_target="sum",
             abs_norm=True,
@@ -731,40 +774,34 @@ def get_reference_images(
         "layer_name": layer_name,
         "mode": mode,
         "r_range": (0, n_valid),
+        "attribute": True,
         "rf": True,
         "batch_size": min(batch_size, n_valid),
         "plot_fn": vis_opaque_img_border,
     }
 
     if model_name == "vilt":
-        # if layer_name.startswith("model"):
-        #     layer_name = layer_name.replace("model.", "")
-        #     common_kwargs["layer_name"] = layer_name
-            
         references = fv.get_max_reference(
             **common_kwargs,
-            attribute=True,
         )
     else:
         references = fv.get_max_reference(
             **common_kwargs,
-            attribute=True,
             composite=composite,
         )
 
     if neuron not in references:
         raise KeyError(
-            f"get_max_reference did not return neuron {neuron}. "
-            f"Returned keys: {list(references)}"
+            f"Neuron {neuron} was not returned. "
+            f"Available keys: {list(references)}"
         )
 
     neuron_references = references[neuron]
 
     if not isinstance(neuron_references, (list, tuple)):
         raise TypeError(
-            "Expected rendered reference images, but "
-            f"get_max_reference returned {type(neuron_references)}. "
-            "This usually means attribution was not computed."
+            "Expected a list of rendered reference images, "
+            f"received {type(neuron_references)}."
         )
 
     images = [
@@ -775,7 +812,7 @@ def get_reference_images(
     if len(images) != n_valid:
         raise RuntimeError(
             f"Expected {n_valid} reference images for neuron "
-            f"{neuron}, but received {len(images)}."
+            f"{neuron}, received {len(images)}."
         )
 
     return images
@@ -795,16 +832,15 @@ def main():
 
     if args.split is None and len(configured_splits) != 1:
         raise ValueError(
-            "The config contains multiple splits. Select one "
-            "using --split."
+            "The config contains multiple splits. "
+            "Select one with --split."
         )
 
     split = args.split or configured_splits[0]
-    crp_split = getattr(
-        args,
-        "crp_split",
-        None,
-    ) or split
+    crp_split = (
+        getattr(args, "crp_split", None)
+        or split
+    )
 
     device = (
         "cuda"
@@ -817,18 +853,17 @@ def main():
     print(f"Dataset: {dataset_name}")
     print(f"Split: {split}")
 
-    dataset_arguments = {
+    dataset_kwargs = {
         "data_path": args.data_path,
         "preprocessing": False,
         "split": split,
     }
 
-    # ViLTProcessor expects untransformed PIL images.
     if model_name == "vilt":
-        dataset_arguments["transform"] = False
+        dataset_kwargs["transform"] = False
 
     dataset = get_dataset(dataset_name)(
-        **dataset_arguments
+        **dataset_kwargs
     )
 
     model = get_fn_model_loader(model_name)(
@@ -843,11 +878,6 @@ def main():
         model_name,
     )
 
-    if not layer_names:
-        raise RuntimeError(
-            f"No layers were returned for model {model_name!r}."
-        )
-
     layer_name = validate_layer_name(
         args.layer_name or layer_names[-1],
         layer_names,
@@ -860,7 +890,7 @@ def main():
         f"{model_name}_{dataset_name}_{crp_split}"
     )
 
-    setup = prepare_model_and_visualization(
+    setup = configure_visualization(
         args=args,
         dataset=dataset,
         model=model,
@@ -872,18 +902,20 @@ def main():
 
     fv = setup["fv"]
     composite = setup["composite"]
-    reference_layer_name = setup["reference_layer_name"]
+    reference_layer_name = setup[
+        "reference_layer_name"
+    ]
 
-    print(f"CRP reference layer: {reference_layer_name}")
+    print(
+        f"CRP reference layer: {reference_layer_name}"
+    )
 
     if (
         not os.path.isdir(fv.RelMax.PATH)
         or not os.listdir(fv.RelMax.PATH)
     ):
         raise FileNotFoundError(
-            f"No CRP artifacts were found at {fv.RelMax.PATH}. "
-            "Run CRP maximization with the same model, dataset, "
-            f"and split ({split!r}) first."
+            f"No CRP artifacts found at {fv.RelMax.PATH}."
         )
 
     embeddings, lengths = load_latent_representations(
@@ -902,9 +934,7 @@ def main():
     ]
 
     if not neurons:
-        raise ValueError(
-            "No neuron indices were provided."
-        )
+        raise ValueError("No neurons were selected.")
 
     for neuron in neurons:
         if neuron < 0 or neuron >= embeddings.shape[0]:
@@ -943,13 +973,13 @@ def main():
         exist_ok=True,
     )
 
-    virtual_neuron_directory = (
+    virtual_directory = (
         Path("results/virtual_neurons")
         / dataset_name
         / model_name
         / layer_name
     )
-    virtual_neuron_directory.mkdir(
+    virtual_directory.mkdir(
         parents=True,
         exist_ok=True,
     )
@@ -968,8 +998,7 @@ def main():
         if n_valid < minimum_references:
             raise ValueError(
                 f"Neuron {neuron} has only {n_valid} valid "
-                f"references; at least {minimum_references} "
-                "are required."
+                f"references; {minimum_references} are required."
             )
 
         neuron_embeddings = embeddings[
@@ -1018,13 +1047,11 @@ def main():
             f"Neuron #{neuron}"
         )
 
-        all_references_grid = make_image_grid(
+        all_grid = make_image_grid(
             reference_images
         )
 
-        axes[1, column].imshow(
-            all_references_grid
-        )
+        axes[1, column].imshow(all_grid)
         axes[1, column].set_xticks([])
         axes[1, column].set_yticks([])
 
@@ -1038,7 +1065,10 @@ def main():
         )
 
         cluster_labels = clusterer.fit_predict(
-            neuron_embeddings.detach().cpu().numpy()
+            neuron_embeddings
+            .detach()
+            .cpu()
+            .numpy()
         )
 
         virtual_neurons = []
@@ -1046,20 +1076,20 @@ def main():
         for cluster_index in range(n_clusters):
             cluster_images = [
                 image
-                for index, image in enumerate(reference_images)
+                for index, image in enumerate(
+                    reference_images
+                )
                 if cluster_labels[index] == cluster_index
             ]
 
             virtual_neurons.append(cluster_images)
 
-            cluster_grid = make_image_grid(
-                cluster_images
-            )
-
             axes[
                 2 + cluster_index,
                 column,
-            ].imshow(cluster_grid)
+            ].imshow(
+                make_image_grid(cluster_images)
+            )
 
             axes[
                 2 + cluster_index,
@@ -1092,7 +1122,7 @@ def main():
         }
 
         np.savez_compressed(
-            virtual_neuron_directory
+            virtual_directory
             / f"{layer_name}_{neuron}.npz",
             **arrays_to_save,
         )
@@ -1100,7 +1130,7 @@ def main():
         plt.imsave(
             output_directory
             / f"neuron_{neuron}_references.png",
-            all_references_grid,
+            all_grid,
         )
 
     figure.tight_layout()
@@ -1122,7 +1152,6 @@ def main():
     )
 
     print(f"Saved plot to: {output_path}")
-
     plt.show()
 
 
