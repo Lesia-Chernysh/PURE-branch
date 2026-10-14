@@ -13,6 +13,7 @@ import zennit.rules as z_rules
 
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
+from crp.image import plot_grid
 try:
     from crp.visualization import FeatureVisualization
 except ImportError:
@@ -1130,9 +1131,10 @@ def main():
         ref_c = fv.get_max_reference([neuron], layer_name, "relevance", (0, 10), attribute=True)
 
 
-        for concept_id, refs in ref_c.items():
-            if hasattr(refs, "data"):  # BatchFeature
-                ref_c[concept_id] = refs["pixel_values"]
+        if model_name == "vilt":
+            for concept_id, refs in ref_c.items():
+                if hasattr(refs, "data"):  # BatchFeature
+                    ref_c[concept_id] = refs["pixel_values"]
 
         plot_grid(
             ref_c,
