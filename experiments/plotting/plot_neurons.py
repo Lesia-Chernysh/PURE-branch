@@ -1138,7 +1138,7 @@ def main():
         plt.imsave(
             output_directory
             / f"neuron_{neuron}_references.png",
-            ref_c,
+            ref_c[concept_id],
         )
 
     figure.tight_layout()
