@@ -1129,6 +1129,8 @@ def main():
 
         ref_c = fv.get_max_reference([neuron], layer_name, "relevance", (0, 10), attribute=True)
 
+        print(ref_c)
+
         for concept_id, refs in ref_c.items():
             if hasattr(refs, "data"):  # BatchFeature
                 ref_c[concept_id] = refs["pixel_values"]
