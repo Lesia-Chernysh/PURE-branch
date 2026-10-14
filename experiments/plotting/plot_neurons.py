@@ -1127,10 +1127,16 @@ def main():
             **arrays_to_save,
         )
 
+        ref_c = fv.get_max_reference([neuron], layer_name, "relevance", (0, 10), attribute=True)
+
+        for concept_id, refs in ref_c.items():
+            if hasattr(refs, "data"):  # BatchFeature
+                ref_c[concept_id] = refs["pixel_values"]
+
         plt.imsave(
             output_directory
             / f"neuron_{neuron}_references.png",
-            all_grid,
+            ref_c,
         )
 
     figure.tight_layout()
