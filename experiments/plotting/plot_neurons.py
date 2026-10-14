@@ -1148,16 +1148,16 @@ def main():
             exist_ok=True,
         )
         
-        figure = plt.gcf()
+        figure_one_neuron = plt.gcf()
         
-        figure.savefig(
+        figure_one_neuron.savefig(
             output_directory
             / f"neuron_{neuron}_references.png",
             dpi=200,
             bbox_inches="tight",
         )
         
-        plt.close(figure)
+        plt.close(figure_one_neuron)
 
     figure.tight_layout()
 
