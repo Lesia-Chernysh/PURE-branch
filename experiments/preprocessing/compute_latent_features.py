@@ -93,9 +93,16 @@ def load_dataset(
     split,
     model_name,
 ):
+    # ViLT and Qwen preprocess PIL images with their own processors.
+    # CNN and ViT models require the dataset's tensor transform.
+    use_dataset_transform = model_name not in {
+        "vilt",
+        "qwen",
+    }
+
     dataset = get_dataset(dataset_name)(
         data_path=data_path,
-        transform=False,
+        transform=use_dataset_transform,
         preprocessing=False,
         split=split,
     )
@@ -104,17 +111,17 @@ def load_dataset(
     predicted_targets = None
 
     if model_name in {"vilt", "qwen"}:
-        from datasets.imagenet_mini import get_imagenetmini_for_vqa
+        from datasets.imagenet_mini import (
+            get_imagenetmini_for_vqa,
+        )
 
         predictions_path = {
             "vilt": "vilt_predicted_targets.pt",
             "qwen": "qwen_predicted_targets.pt",
         }[model_name]
 
-        predicted_targets = torch.load(
-            predictions_path,
-            map_location="cpu",
-            weights_only=True,
+        predicted_targets = safe_torch_load(
+            predictions_path
         )
 
         feature_dataset = get_imagenetmini_for_vqa(
