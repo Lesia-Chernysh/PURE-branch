@@ -43,6 +43,52 @@ from utils.helper import (
 from utils.lrp_composites import ReferenceEpsilonPlusFlat
 from utils.render import vis_opaque_img_border
 
+def call_get_max_reference(
+    fv,
+    neuron,
+    layer_name,
+    mode,
+    n_valid,
+    batch_size,
+    composite=None,
+    plot_fn=vis_opaque_img_border,
+):
+    method = fv.get_max_reference
+    parameters = inspect.signature(method).parameters
+
+    kwargs = {
+        "concept_ids": [neuron],
+        "layer_name": layer_name,
+        "mode": mode,
+        "r_range": (0, n_valid),
+        "rf": False,
+        "batch_size": min(batch_size, n_valid),
+        "plot_fn": plot_fn,
+    }
+
+    # Only the custom ViLT implementation has this argument.
+    if "attribute" in parameters:
+        kwargs["attribute"] = True
+
+    # Standard FeatureVisualization accepts the composite.
+    if "composite" in parameters:
+        kwargs["composite"] = composite
+
+    print(
+        "get_max_reference implementation:",
+        type(fv).__name__,
+    )
+    print(
+        "get_max_reference parameters:",
+        list(parameters),
+    )
+    print(
+        "Arguments passed:",
+        list(kwargs),
+    )
+
+    return method(**kwargs)
+
 
 class LayerNameRemappingAttribution:
     """
@@ -760,73 +806,16 @@ def configure_visualization(
     }
 
 
-def get_reference_images(
-    fv,
-    model_name,
-    neuron,
-    layer_name,
-    mode,
-    n_valid,
-    batch_size,
-    composite,
-):
-    if model_name == "vilt":
-        # ViLT-specific method:
-        # accepts `attribute`, but not `composite`.
-        references = fv.get_max_reference(
-            concept_ids=[neuron],
-            layer_name=layer_name,
-            mode=mode,
-            r_range=(0, n_valid),
-            attribute=True,
-            rf=True,
-            batch_size=min(batch_size, n_valid),
-            plot_fn=vis_opaque_img_border,
-        )
-
-    else:
-        # Standard CRP method:
-        # accepts `composite`, but not `attribute`.
-        references = fv.get_max_reference(
-            concept_ids=[neuron],
-            layer_name=layer_name,
-            mode=mode,
-            r_range=(0, n_valid),
-            composite=composite,
-            rf=True,
-            batch_size=min(batch_size, n_valid),
-            plot_fn=vis_opaque_img_border,
-        )
-
-    if neuron not in references:
-        raise KeyError(
-            f"Neuron {neuron} was not returned. "
-            f"Available keys: {list(references)}"
-        )
-
-    neuron_references = references[neuron]
-
-    # ViLT may return a Hugging Face BatchFeature.
-    if model_name == "vilt" and hasattr(
-        neuron_references,
-        "data",
-    ):
-        neuron_references = neuron_references[
-            "pixel_values"
-        ]
-
-    images = [
-        to_display_image(image)
-        for image in neuron_references[:n_valid]
-    ]
-
-    if len(images) != n_valid:
-        raise RuntimeError(
-            f"Expected {n_valid} reference images for neuron "
-            f"{neuron}, received {len(images)}."
-        )
-
-    return images
+call_get_max_reference(
+        fv=fv,
+        neuron=neuron,
+        layer_name=layer_name,
+        mode=mode,
+        n_valid=n_valid,
+        batch_size=batch_size,
+        composite=composite,
+        plot_fn=vis_opaque_img_border,
+    )
 
 
 def main():
