@@ -97,7 +97,7 @@ def get_reference_images(
         batch_size=batch_size,
         composite=composite,
         plot_fn=vis_opaque_img_border,
-        rf=True,
+        rf=False,
     )
 
     if neuron not in references:
