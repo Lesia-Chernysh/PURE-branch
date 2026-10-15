@@ -45,6 +45,7 @@ from utils.render import vis_opaque_img_border
 
 def call_get_max_reference(
     fv,
+    model_name,
     neuron,
     layer_name,
     mode,
@@ -52,42 +53,76 @@ def call_get_max_reference(
     batch_size,
     composite=None,
     plot_fn=vis_opaque_img_border,
+    rf=False,
 ):
-    method = fv.get_max_reference
-    parameters = inspect.signature(method).parameters
-
-    kwargs = {
+    common_kwargs = {
         "concept_ids": [neuron],
         "layer_name": layer_name,
         "mode": mode,
         "r_range": (0, n_valid),
-        "rf": False,
+        "rf": rf,
         "batch_size": min(batch_size, n_valid),
         "plot_fn": plot_fn,
     }
 
-    # Only the custom ViLT implementation has this argument.
-    if "attribute" in parameters:
-        kwargs["attribute"] = True
+    if model_name == "vilt":
+        return fv.get_max_reference(
+            **common_kwargs,
+            attribute=True,
+        )
 
-    # Standard FeatureVisualization accepts the composite.
-    if "composite" in parameters:
-        kwargs["composite"] = composite
-
-    print(
-        "get_max_reference implementation:",
-        type(fv).__name__,
-    )
-    print(
-        "get_max_reference parameters:",
-        list(parameters),
-    )
-    print(
-        "Arguments passed:",
-        list(kwargs),
+    return fv.get_max_reference(
+        **common_kwargs,
+        composite=composite,
     )
 
-    return method(**kwargs)
+
+def get_reference_images(
+    fv,
+    model_name,
+    neuron,
+    layer_name,
+    mode,
+    n_valid,
+    batch_size,
+    composite,
+):
+    references = call_get_max_reference(
+        fv=fv,
+        model_name=model_name,
+        neuron=neuron,
+        layer_name=layer_name,
+        mode=mode,
+        n_valid=n_valid,
+        batch_size=batch_size,
+        composite=composite,
+        plot_fn=vis_opaque_img_border,
+        rf=True,
+    )
+
+    if neuron not in references:
+        raise KeyError(
+            f"Neuron {neuron} was not returned. "
+            f"Available keys: {list(references)}"
+        )
+
+    neuron_references = references[neuron]
+
+    if hasattr(neuron_references, "data"):
+        neuron_references = neuron_references["pixel_values"]
+
+    images = [
+        to_display_image(image)
+        for image in neuron_references[:n_valid]
+    ]
+
+    if len(images) != n_valid:
+        raise RuntimeError(
+            f"Expected {n_valid} references for neuron {neuron}, "
+            f"received {len(images)}."
+        )
+
+    return images
 
 
 class LayerNameRemappingAttribution:
@@ -806,17 +841,6 @@ def configure_visualization(
     }
 
 
-call_get_max_reference(
-        fv=fv,
-        neuron=neuron,
-        layer_name=layer_name,
-        mode=mode,
-        n_valid=n_valid,
-        batch_size=batch_size,
-        composite=composite,
-        plot_fn=vis_opaque_img_border,
-    )
-
 
 def main():
     args = get_parser()
@@ -1127,7 +1151,20 @@ def main():
             **arrays_to_save,
         )
 
-        ref_c = fv.get_max_reference([neuron], layer_name, "relevance", (0, 10), attribute=True)
+        heatmap_count = min(10, n_valid)
+
+        ref_c = call_get_max_reference(
+            fv=fv,
+            model_name=model_name,
+            neuron=neuron,
+            layer_name=reference_layer_name,
+            mode="relevance",
+            n_valid=heatmap_count,
+            batch_size=args.batch_size,
+            composite=composite,
+            plot_fn=None,
+            rf=False,
+        )
 
 
         if model_name == "vilt":
@@ -1182,3 +1219,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
