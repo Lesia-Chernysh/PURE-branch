@@ -307,7 +307,10 @@ def main(
 
     else:
         concept = ChannelConcept()
-        attribution = CondAttribution(model)
+        try:
+            attribution = CondAttribution(model)
+        except:
+            attribution = CondAttribution(concept, model)
 
         attribution_layer_names = original_layer_names
         attribution_layer_name = requested_layer_name
