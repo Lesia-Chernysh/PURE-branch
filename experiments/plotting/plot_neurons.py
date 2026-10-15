@@ -42,6 +42,11 @@ from utils.helper import (
 )
 from utils.lrp_composites import ReferenceEpsilonPlusFlat
 from utils.render import vis_opaque_img_border
+from utils.save_virtual_neurons_with_embeddings import (
+    get_reference_indices,
+    load_original_images,
+    save_virtual_neuron_npz,
+)
 
 def call_get_max_reference(
     fv,
@@ -1133,22 +1138,39 @@ def main():
                     f"Cluster {cluster_index + 1}"
                 )
 
-        arrays_to_save = {
-            f"img_{cluster_index}_{image_index}": np.asarray(
-                image
-            )
-            for cluster_index, cluster_images in enumerate(
-                virtual_neurons
-            )
-            for image_index, image in enumerate(
-                cluster_images
-            )
-        }
-
-        np.savez_compressed(
-            virtual_directory
-            / f"{layer_name}_{neuron}.npz",
-            **arrays_to_save,
+        reference_indices = get_reference_indices(
+            fv=fv,
+            layer_name=reference_layer_name,
+            neuron=neuron,
+            mode=args.mode,
+            count=n_valid,
+        )
+        
+        # Account for possible -1 padding references.
+        n_to_save = min(
+            len(reference_indices),
+            len(reference_images),
+            len(neuron_embeddings),
+        )
+        
+        reference_indices = reference_indices[:n_to_save]
+        neuron_embeddings_to_save = neuron_embeddings[:n_to_save]
+        cluster_labels_to_save = cluster_labels[:n_to_save]
+        
+        original_reference_images = load_original_images(
+            dataset=feature_dataset,
+            indices=reference_indices,
+        )
+        
+        save_virtual_neuron_npz(
+            output_path=(
+                virtual_directory
+                / f"{layer_name}_{neuron}.npz"
+            ),
+            reference_images=original_reference_images,
+            reference_embeddings=neuron_embeddings_to_save,
+            cluster_labels=cluster_labels_to_save,
+            reference_indices=reference_indices,
         )
 
         heatmap_count = min(10, n_valid)
