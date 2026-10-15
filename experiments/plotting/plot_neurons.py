@@ -1245,7 +1245,7 @@ def main():
         
         figure_one_neuron.savefig(
             output_directory
-            / f"neuron_{neuron}_references.png",
+            / f"{layer_name}_neuron_{neuron}_references.png",
             dpi=200,
             bbox_inches="tight",
         )
@@ -1261,7 +1261,7 @@ def main():
 
     output_path = (
         output_directory
-        / f"neurons_{neuron_string}.pdf"
+        / f"{layer_name}_neurons_{neuron_string}.pdf"
     )
 
     figure.savefig(
