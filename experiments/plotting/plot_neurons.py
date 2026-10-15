@@ -934,6 +934,7 @@ def main():
     reference_layer_name = setup[
         "reference_layer_name"
     ]
+    feature_dataset = setup["feature_dataset"]
 
     print(
         f"CRP reference layer: {reference_layer_name}"
@@ -947,6 +948,7 @@ def main():
             f"No CRP artifacts found at {fv.RelMax.PATH}."
         )
 
+    # These embeddings control the PURE/KMeans partition and the UMAP plot.
     embeddings, lengths = load_latent_representations(
         dataset_name=dataset_name,
         model_name=model_name,
@@ -955,6 +957,28 @@ def main():
         embedding_type=args.embeddings,
         n_refimgs=args.n_refimgs,
     )
+
+    # SemanticLens must receive semantic image embeddings, irrespective of
+    # which representation was selected for clustering.
+    if args.embeddings == "CLIP":
+        semantic_embeddings = embeddings
+        semantic_lengths = lengths
+    else:
+        semantic_embeddings, semantic_lengths = load_latent_representations(
+            dataset_name=dataset_name,
+            model_name=model_name,
+            layer_name=layer_name,
+            split=split,
+            embedding_type="CLIP",
+            n_refimgs=args.n_refimgs,
+        )
+
+    if embeddings.shape[:2] != semantic_embeddings.shape[:2]:
+        raise ValueError(
+            "Clustering and CLIP embedding tensors are not aligned: "
+            f"{tuple(embeddings.shape[:2])} versus "
+            f"{tuple(semantic_embeddings.shape[:2])}."
+        )
 
     neurons = [
         int(value.strip())
@@ -1016,6 +1040,7 @@ def main():
     for column, neuron in enumerate(neurons):
         n_valid = min(
             int(lengths[neuron]),
+            int(semantic_lengths[neuron]),
             args.n_refimgs,
         )
 
@@ -1034,6 +1059,15 @@ def main():
             neuron,
             :n_valid,
         ]
+        semantic_neuron_embeddings = semantic_embeddings[
+            neuron,
+            :n_valid,
+        ]
+
+        if not torch.isfinite(semantic_neuron_embeddings).all():
+            raise FloatingPointError(
+                f"CLIP embeddings for neuron {neuron} contain non-finite values."
+            )
 
         reference_images = get_reference_images(
             fv=fv,
@@ -1151,10 +1185,11 @@ def main():
             len(reference_indices),
             len(reference_images),
             len(neuron_embeddings),
+            len(semantic_neuron_embeddings),
         )
-        
+
         reference_indices = reference_indices[:n_to_save]
-        neuron_embeddings_to_save = neuron_embeddings[:n_to_save]
+        semantic_embeddings_to_save = semantic_neuron_embeddings[:n_to_save]
         cluster_labels_to_save = cluster_labels[:n_to_save]
         
         original_reference_images = load_original_images(
@@ -1168,7 +1203,7 @@ def main():
                 / f"{layer_name}_{neuron}.npz"
             ),
             reference_images=original_reference_images,
-            reference_embeddings=neuron_embeddings_to_save,
+            reference_embeddings=semantic_embeddings_to_save,
             cluster_labels=cluster_labels_to_save,
             reference_indices=reference_indices,
         )
@@ -1241,5 +1276,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
