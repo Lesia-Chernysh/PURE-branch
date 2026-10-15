@@ -770,25 +770,32 @@ def get_reference_images(
     batch_size,
     composite,
 ):
-    common_kwargs = {
-        "concept_ids": [neuron],
-        "layer_name": layer_name,
-        "mode": mode,
-        "r_range": (0, n_valid),
-        "attribute": True,
-        "rf": True,
-        "batch_size": min(batch_size, n_valid),
-        "plot_fn": vis_opaque_img_border,
-    }
-
     if model_name == "vilt":
+        # ViLT-specific method:
+        # accepts `attribute`, but not `composite`.
         references = fv.get_max_reference(
-            **common_kwargs,
+            concept_ids=[neuron],
+            layer_name=layer_name,
+            mode=mode,
+            r_range=(0, n_valid),
+            attribute=True,
+            rf=True,
+            batch_size=min(batch_size, n_valid),
+            plot_fn=vis_opaque_img_border,
         )
+
     else:
+        # Standard CRP method:
+        # accepts `composite`, but not `attribute`.
         references = fv.get_max_reference(
-            **common_kwargs,
+            concept_ids=[neuron],
+            layer_name=layer_name,
+            mode=mode,
+            r_range=(0, n_valid),
             composite=composite,
+            rf=True,
+            batch_size=min(batch_size, n_valid),
+            plot_fn=vis_opaque_img_border,
         )
 
     if neuron not in references:
@@ -799,11 +806,14 @@ def get_reference_images(
 
     neuron_references = references[neuron]
 
-    if not isinstance(neuron_references, (list, tuple)):
-        raise TypeError(
-            "Expected a list of rendered reference images, "
-            f"received {type(neuron_references)}."
-        )
+    # ViLT may return a Hugging Face BatchFeature.
+    if model_name == "vilt" and hasattr(
+        neuron_references,
+        "data",
+    ):
+        neuron_references = neuron_references[
+            "pixel_values"
+        ]
 
     images = [
         to_display_image(image)
