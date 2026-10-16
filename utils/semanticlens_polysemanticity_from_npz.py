@@ -9,6 +9,39 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+
+# Importing ``semanticlens.scores`` first executes semanticlens/__init__.py,
+# which imports its relevance visualizer and expects upstream CRP's
+# ``FeatureVisualization`` symbol. PURE's multimodal CRP fork replaces that
+# symbol with a model-specific class. This script only uses the numerical
+# score, but the alias is needed to let SemanticLens finish importing.
+import crp.visualization as _crp_visualization
+
+if not hasattr(_crp_visualization, "FeatureVisualization"):
+    for _candidate_name in (
+        "ViLTFeatureVisualization",
+        "PredictionFeatureVisualization",
+        "QwenFeatureVisualization",
+    ):
+        if hasattr(_crp_visualization, _candidate_name):
+            setattr(
+                _crp_visualization,
+                "FeatureVisualization",
+                getattr(_crp_visualization, _candidate_name),
+            )
+            break
+    else:
+        _available = [
+            name
+            for name in dir(_crp_visualization)
+            if "visual" in name.lower() or "feature" in name.lower()
+        ]
+        raise ImportError(
+            "SemanticLens requires crp.visualization.FeatureVisualization, "
+            "but this CRP installation exposes no compatible visualization "
+            f"class. Available candidates: {_available}"
+        )
+
 from semanticlens.scores import polysemanticity_score
 
 
