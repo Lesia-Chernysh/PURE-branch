@@ -28,6 +28,21 @@ def parse_args():
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--n-clusters", type=int, default=2)
     parser.add_argument("--random-state", type=int, default=123)
+    parser.add_argument("--model-name", default=None)
+    parser.add_argument("--checkpoint", default=None)
+    parser.add_argument(
+        "--question",
+        default=None,
+        help="Fixed VQA question used to create ViLT artifacts.",
+    )
+    parser.add_argument(
+        "--layer-name",
+        default=None,
+        help=(
+            "Optional layer filter. For ViLT, names with or without the "
+            "leading 'model.' prefix are equivalent."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -38,13 +53,20 @@ def natural_key(value):
     ]
 
 
-def parse_identity(path, root):
+def canonical_layer_name(layer, model_name=None):
+    layer = str(layer)
+    if (model_name or "").lower() == "vilt" and layer.startswith("model."):
+        return layer[len("model."):]
+    return layer
+
+
+def parse_identity(path, root, model_name=None):
     match = NEURON_RE.match(path.stem)
     if match is None:
         raise ValueError(f"Cannot parse neuron ID from {path.name}")
     neuron = int(match.group(2))
     layer = path.parent.name if path.parent != root else match.group(1)
-    return layer, neuron
+    return canonical_layer_name(layer, model_name), neuron
 
 
 def load_virtual_clusters(path):
@@ -91,6 +113,10 @@ def semanticlens_score(embeddings, n_clusters, random_state):
             f"Expected [samples, dimensions], got {tuple(embeddings.shape)}"
         )
     if embeddings.shape[0] < n_clusters:
+        return math.nan
+    if embeddings.shape[1] == 0:
+        return math.nan
+    if not torch.isfinite(embeddings).all():
         return math.nan
 
     # SemanticLens expects [components, samples, embedding dimensions].
@@ -235,9 +261,21 @@ def main():
     if not paths:
         raise FileNotFoundError(f"No NPZ files below {args.input_root}")
 
+    requested_layer = (
+        canonical_layer_name(args.layer_name, args.model_name)
+        if args.layer_name
+        else None
+    )
+
     rows = []
     for index, path in enumerate(paths, start=1):
-        layer, neuron = parse_identity(path, args.input_root)
+        layer, neuron = parse_identity(
+            path,
+            args.input_root,
+            model_name=args.model_name,
+        )
+        if requested_layer is not None and layer != requested_layer:
+            continue
         clusters = load_virtual_clusters(path)
         print(f"[{index}/{len(paths)}] {path}: {len(clusters)} clusters")
 
@@ -251,6 +289,9 @@ def main():
             rows.append(
                 {
                     "file": str(path.relative_to(args.input_root)),
+                    "model": args.model_name or "",
+                    "checkpoint": args.checkpoint or "",
+                    "question": args.question or "",
                     "layer": layer,
                     "neuron": neuron,
                     "cluster": cluster_id,
@@ -260,6 +301,13 @@ def main():
                 }
             )
 
+    if not rows:
+        suffix = f" for layer {requested_layer!r}" if requested_layer else ""
+        raise FileNotFoundError(
+            f"No matching virtual-neuron records were found{suffix} below "
+            f"{args.input_root}."
+        )
+
     summaries = summarize_by_layer(rows)
     scores = np.asarray(
         [row["polysemanticity"] for row in rows if math.isfinite(row["polysemanticity"])],
@@ -268,6 +316,10 @@ def main():
     model_mean = float(scores.mean()) if len(scores) else math.nan
     model_summary = {
         "metric": "SemanticLens polysemanticity_score",
+        "model": args.model_name,
+        "checkpoint": args.checkpoint,
+        "question": args.question,
+        "requested_layer": requested_layer,
         "n_clusters": args.n_clusters,
         "random_state": args.random_state,
         "virtual_neuron_count": len(rows),
@@ -286,7 +338,8 @@ def main():
         args.output_dir / "virtual_neuron_polysemanticity.csv",
         rows,
         [
-            "file", "layer", "neuron", "cluster", "image_count",
+            "file", "model", "checkpoint", "question", "layer",
+            "neuron", "cluster", "image_count",
             "embedding_dimension", "polysemanticity",
         ],
     )
