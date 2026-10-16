@@ -1,5 +1,7 @@
 import os
+import inspect
 from argparse import ArgumentParser
+from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 
@@ -29,6 +31,7 @@ from scipy import stats
 from sklearn.cluster import KMeans
 from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import make_grid
+from transformers.feature_extraction_utils import BatchFeature
 from zennit.canonizers import SequentialMergeBatchNorm
 from zennit.composites import EpsilonPlusFlat, LayerMapComposite
 
@@ -67,19 +70,98 @@ def call_get_max_reference(
         "r_range": (0, n_valid),
         "rf": rf,
         "batch_size": min(batch_size, n_valid),
-        "plot_fn": plot_fn,
     }
 
-    if model_name == "vilt":
-        return fv.get_max_reference(
-            **common_kwargs,
-            attribute=True,
+    # Passing plot_fn=None overrides the ViLT visualizer's multimodal-aware
+    # default and makes it return an unrendered BatchFeature. Omit the keyword
+    # when no explicit renderer was requested.
+    if plot_fn is not None:
+        common_kwargs["plot_fn"] = plot_fn
+
+    optional_kwargs = (
+        {"attribute": True}
+        if model_name == "vilt"
+        else {"composite": composite}
+    )
+
+    # PURE's ViLT visualizer and upstream CRP expose slightly different
+    # signatures. Keep only arguments supported by the installed version.
+    candidate_kwargs = {**common_kwargs, **optional_kwargs}
+    signature = inspect.signature(fv.get_max_reference)
+    accepts_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_kwargs:
+        supported_kwargs = candidate_kwargs
+    else:
+        supported_kwargs = {
+            key: value
+            for key, value in candidate_kwargs.items()
+            if key in signature.parameters
+        }
+
+    return fv.get_max_reference(**supported_kwargs)
+
+
+def _extract_pixel_values(value):
+    """Extract a tensor from a Hugging Face BatchFeature-like value."""
+
+    if isinstance(value, BatchFeature):
+        if "pixel_values" not in value:
+            raise KeyError(
+                "ViLT BatchFeature has no pixel_values key. "
+                f"Available keys: {list(value.keys())}"
+            )
+        return value["pixel_values"]
+
+    if isinstance(value, Mapping) and "pixel_values" in value:
+        return value["pixel_values"]
+
+    if hasattr(value, "pixel_values"):
+        return value.pixel_values
+
+    return value
+
+
+def _vilt_tensor_to_display_batch(value):
+    """Convert ViLT-normalized BCHW/CHW tensors into [0, 1] tensors."""
+
+    value = _extract_pixel_values(value)
+    if not torch.is_tensor(value):
+        return value
+
+    tensor = value.detach().cpu().float().clone()
+    if tensor.ndim == 3:
+        tensor = tensor.unsqueeze(0)
+    if tensor.ndim != 4:
+        raise ValueError(
+            "Expected ViLT reference data in BCHW format, "
+            f"received {tuple(tensor.shape)}."
         )
 
-    return fv.get_max_reference(
-        **common_kwargs,
-        composite=composite,
-    )
+    minimum = float(tensor.min())
+    maximum = float(tensor.max())
+    if minimum < 0.0 or maximum > 1.0:
+        if minimum >= -1.05 and maximum <= 1.05:
+            # ViLT image processor defaults: mean=0.5 and std=0.5.
+            tensor = tensor * 0.5 + 0.5
+        else:
+            # Fallback for ImageNet-normalized tensors.
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+            tensor = tensor * std + mean
+
+    return tensor.clamp(0.0, 1.0).contiguous()
+
+
+def prepare_vilt_reference_dict(references):
+    """Make every ViLT concept value safe for CRP's plot_grid/imgify."""
+
+    return {
+        concept_id: _vilt_tensor_to_display_batch(value)
+        for concept_id, value in references.items()
+    }
 
 
 def get_reference_images(
@@ -101,7 +183,11 @@ def get_reference_images(
         n_valid=n_valid,
         batch_size=batch_size,
         composite=composite,
-        plot_fn=vis_opaque_img_border,
+        plot_fn=(
+            None
+            if model_name == "vilt"
+            else vis_opaque_img_border
+        ),
         rf=True,
     )
 
@@ -112,9 +198,10 @@ def get_reference_images(
         )
 
     neuron_references = references[neuron]
-
-    if hasattr(neuron_references, "data"):
-        neuron_references = neuron_references["pixel_values"]
+    if model_name == "vilt":
+        neuron_references = _vilt_tensor_to_display_batch(
+            neuron_references
+        )
 
     images = [
         to_display_image(image)
@@ -1225,9 +1312,7 @@ def main():
 
 
         if model_name == "vilt":
-            for concept_id, refs in ref_c.items():
-                if hasattr(refs, "data"):  # BatchFeature
-                    ref_c[concept_id] = refs["pixel_values"]
+            ref_c = prepare_vilt_reference_dict(ref_c)
 
         plot_grid(
             ref_c,
@@ -1276,7 +1361,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
