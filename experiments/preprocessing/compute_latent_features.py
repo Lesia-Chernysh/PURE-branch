@@ -120,7 +120,7 @@ def load_dataset(
             "qwen": "qwen_predicted_targets.pt",
         }[model_name]
 
-        predicted_targets = safe_torch_load(
+        predicted_targets = torch.load(
             predictions_path
         )
 
