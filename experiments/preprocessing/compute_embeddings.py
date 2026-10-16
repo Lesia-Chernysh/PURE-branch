@@ -242,6 +242,17 @@ class ViltVQAAdapter(nn.Module):
         self.register_buffer("fixed_attention_mask", attention_mask, persistent=False)
         self.register_buffer("fixed_token_type_ids", token_type_ids, persistent=False)
 
+    @property
+    def hf_model(self) -> ViltForQuestionAnswering:
+        """Compatibility alias expected by PURE's ViLT visualizer.
+
+        A property is used instead of assigning the module a second time, so
+        PyTorch keeps the existing ``model.vilt...`` module names that match
+        the ActMax cache.
+        """
+
+        return self.model
+
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         batch_size, _, height, width = pixel_values.shape
         pixel_mask = torch.ones(
