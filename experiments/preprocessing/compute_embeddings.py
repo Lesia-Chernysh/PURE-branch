@@ -21,7 +21,28 @@ import yaml
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
 from crp.helper import load_maximization
-from crp.visualization import FeatureVisualization
+# Different PURE/zennit-crp variants expose the visualizer under different
+# names. Use one internal name throughout the rest of this script.
+try:
+    from crp.visualization import FeatureVisualization as CRPFeatureVisualization
+except ImportError:
+    try:
+        from crp.visualization import (
+            ViLTFeatureVisualization as CRPFeatureVisualization,
+        )
+    except ImportError as exc:
+        import crp.visualization as _crp_visualization
+
+        available = [
+            name
+            for name in dir(_crp_visualization)
+            if "visual" in name.lower() or "feature" in name.lower()
+        ]
+        raise ImportError(
+            "This crp installation provides neither FeatureVisualization nor "
+            "ViLTFeatureVisualization. Available visualization symbols: "
+            f"{available}"
+        ) from exc
 from safetensors.torch import save_file
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
@@ -249,7 +270,7 @@ def create_feature_visualization(
     preprocess_fn,
     path: str,
 ):
-    return FeatureVisualization(
+    return CRPFeatureVisualization(
         attribution,
         dataset,
         layer_map,
@@ -261,7 +282,7 @@ def create_feature_visualization(
 
 
 def maybe_run_feature_collection(
-    fv: FeatureVisualization,
+    fv: CRPFeatureVisualization,
     config: dict[str, Any],
 ) -> None:
     """Optionally create ActMax files if requested by the configuration."""
