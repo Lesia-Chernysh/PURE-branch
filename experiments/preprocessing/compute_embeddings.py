@@ -119,11 +119,19 @@ class ViltImageDataset(Dataset):
     from ViLT's answer-vocabulary logits.
     """
 
-    def __init__(self, dataset: Dataset, processor: ViltProcessor):
+    def __init__(
+        self,
+        dataset: Dataset,
+        processor: ViltProcessor,
+        source_mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        source_std: tuple[float, float, float] = (0.229, 0.224, 0.225),
+    ):
         self.dataset = dataset
         self.image_processor = processor.image_processor
         self.preprocessing = lambda value: value
         self.num_classes = processor.image_processor.size
+        self.source_mean = torch.tensor(source_mean, dtype=torch.float32).view(3, 1, 1)
+        self.source_std = torch.tensor(source_std, dtype=torch.float32).view(3, 1, 1)
 
     def __len__(self) -> int:
         return len(self.dataset)
@@ -142,9 +150,46 @@ class ViltImageDataset(Dataset):
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         image, target = self._unpack(self.dataset[index])
+        image = self._prepare_for_vilt(image)
         encoded = self.image_processor(images=image, return_tensors="pt")
         pixel_values = encoded["pixel_values"].squeeze(0)
         return pixel_values, torch.as_tensor(target, dtype=torch.long)
+
+    def _prepare_for_vilt(self, image: Any) -> Any:
+        """Convert an already ImageNet-normalized CHW tensor back to [0, 1].
+
+        PURE datasets may apply their configured normalization even when
+        instantiated with ``preprocessing=False``. Hugging Face image
+        processors must receive PIL/uint8 data or floating point data in
+        [0, 1], so undo that source normalization before ViLT preprocesses it.
+        """
+
+        if not isinstance(image, torch.Tensor):
+            return image
+
+        image = image.detach().cpu().float()
+        if image.ndim != 3:
+            raise ValueError(
+                f"Expected a CHW image tensor, received shape {tuple(image.shape)}"
+            )
+
+        # Accept HWC tensors too, although PURE normally returns CHW.
+        if image.shape[0] not in (1, 3, 4) and image.shape[-1] in (1, 3, 4):
+            image = image.permute(2, 0, 1)
+
+        if image.shape[0] == 4:
+            image = image[:3]
+        elif image.shape[0] == 1:
+            image = image.expand(3, -1, -1)
+
+        minimum = float(image.min())
+        maximum = float(image.max())
+        if minimum < 0.0 or maximum > 1.0:
+            image = image * self.source_std + self.source_mean
+
+        # Small interpolation/rounding excursions should not make the HF
+        # processor reject an otherwise valid image.
+        return image.clamp(0.0, 1.0)
 
 
 class ViltVQAAdapter(nn.Module):
