@@ -435,7 +435,22 @@ def main(
         processor = ViltProcessor.from_pretrained(checkpoint)
         raw_model = ViltForQuestionAnswering.from_pretrained(checkpoint)
         model = ViltVQAAdapter(raw_model, processor, question).to(device).eval()
-        dataset = ViltImageDataset(base_dataset, processor)
+        source_mean = tuple(
+            float(value)
+            for value in config.get("source_image_mean", [0.485, 0.456, 0.406])
+        )
+        source_std = tuple(
+            float(value)
+            for value in config.get("source_image_std", [0.229, 0.224, 0.225])
+        )
+        if len(source_mean) != 3 or len(source_std) != 3:
+            raise ValueError("source_image_mean and source_image_std must have 3 values")
+        dataset = ViltImageDataset(
+            base_dataset,
+            processor,
+            source_mean=source_mean,
+            source_std=source_std,
+        )
         layer_name, layer_names = resolve_vilt_layer(model, layer_name)
         composite = build_vilt_composite(model, layer_name, config)
         preprocessing = dataset.preprocessing
