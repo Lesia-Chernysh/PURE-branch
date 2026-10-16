@@ -123,11 +123,15 @@ class ViltImageDataset(Dataset):
         self,
         dataset: Dataset,
         processor: ViltProcessor,
+        question: str,
+        return_vqa_triplet: bool = False,
         source_mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
         source_std: tuple[float, float, float] = (0.229, 0.224, 0.225),
     ):
         self.dataset = dataset
         self.image_processor = processor.image_processor
+        self.question = question
+        self.return_vqa_triplet = return_vqa_triplet
         self.preprocessing = lambda value: value
         self.num_classes = processor.image_processor.size
         self.source_mean = torch.tensor(source_mean, dtype=torch.float32).view(3, 1, 1)
@@ -148,7 +152,7 @@ class ViltImageDataset(Dataset):
             return image, target
         return sample, 0
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int):
         image, target = self._unpack(self.dataset[index])
         image = self._prepare_for_vilt(image)
         # ``image`` is a floating-point tensor in [0, 1]. ViLT's processor
@@ -160,7 +164,10 @@ class ViltImageDataset(Dataset):
             do_rescale=False,
         )
         pixel_values = encoded["pixel_values"].squeeze(0)
-        return pixel_values, torch.as_tensor(target, dtype=torch.long)
+        target = torch.as_tensor(target, dtype=torch.long)
+        if self.return_vqa_triplet:
+            return pixel_values, self.question, target
+        return pixel_values, target
 
     def _prepare_for_vilt(self, image: Any) -> Any:
         """Convert an already ImageNet-normalized CHW tensor back to [0, 1].
@@ -566,6 +573,10 @@ def main(
         dataset = ViltImageDataset(
             base_dataset,
             processor,
+            question=question,
+            return_vqa_triplet=(
+                CRPFeatureVisualization.__name__ == "ViLTFeatureVisualization"
+            ),
             source_mean=source_mean,
             source_std=source_std,
         )
@@ -574,7 +585,8 @@ def main(
         preprocessing = dataset.preprocessing
         experiment_suffix = question_cache_key(question)
 
-        image, _ = dataset[0]
+        first_sample = dataset[0]
+        image = first_sample[0]
         print(f"ViLT checkpoint: {checkpoint}")
         print(f"ViLT question: {question}")
         print(
