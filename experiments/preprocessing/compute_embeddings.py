@@ -71,7 +71,7 @@ from utils.render import crop_and_mask_images
 
 DEFAULT_VILT_CHECKPOINT = "dandelin/vilt-b32-finetuned-vqa"
 DEFAULT_VILT_QUESTION = "What is in the image?"
-DEFAULT_VILT_LAYER = "vilt.encoder.layer.11.output.dense"
+DEFAULT_VILT_LAYER = "model.vilt.encoder.layer.11.output.dense"
 
 
 def get_args() -> argparse.Namespace:
@@ -209,7 +209,9 @@ class ViltVQAAdapter(nn.Module):
         question: str,
     ):
         super().__init__()
-        self.vilt_vqa = model
+        # Keep the attribute name ``model`` for compatibility with PURE's
+        # existing CRP cache filenames (model.vilt.encoder.layer....).
+        self.model = model
         self.question = question
 
         tokens = processor.tokenizer(
@@ -233,7 +235,7 @@ class ViltVQAAdapter(nn.Module):
             dtype=torch.long,
             device=pixel_values.device,
         )
-        outputs = self.vilt_vqa(
+        outputs = self.model(
             input_ids=self.fixed_input_ids.expand(batch_size, -1),
             attention_mask=self.fixed_attention_mask.expand(batch_size, -1),
             token_type_ids=self.fixed_token_type_ids.expand(batch_size, -1),
@@ -247,10 +249,10 @@ class ViltVQAAdapter(nn.Module):
 def get_vilt_layer_names(model: nn.Module) -> list[str]:
     """Return dense layers whose output dimension is ViLT's hidden size."""
 
-    hidden_size = model.vilt_vqa.config.hidden_size
+    hidden_size = model.model.config.hidden_size
     result = []
     for name, module in model.named_modules():
-        if not name.startswith("vilt.encoder.layer."):
+        if not name.startswith("model.vilt.encoder.layer."):
             continue
         if isinstance(module, nn.Linear) and module.out_features == hidden_size:
             result.append(name)
@@ -265,8 +267,9 @@ def resolve_vilt_layer(model: nn.Module, requested: str | None) -> tuple[str, li
     requested = requested or DEFAULT_VILT_LAYER
     candidates = [
         requested,
-        f"vilt_vqa.{requested}",
-        f"vilt_vqa.vilt.{requested}" if requested.startswith("encoder.") else "",
+        f"model.{requested}",
+        f"model.vilt.{requested}" if requested.startswith("encoder.") else "",
+        requested.replace("vilt_vqa.", "model.", 1),
     ]
     layer_name = next((name for name in candidates if name in available), None)
     if layer_name is None:
