@@ -517,7 +517,12 @@ def main(
     layer_map = {name: concept for name in layer_names}
 
     crp_split = crp_split or split
-    cache_name = f"{model_name}_{dataset_name}_{crp_split}_{experiment_suffix}"
+    # Existing PURE ActMax caches use ``model_dataset_split``. Keep that as
+    # the default lookup convention so previously collected references remain
+    # usable. New experiments may opt into question-specific ActMax caches.
+    cache_name = f"{model_name}_{dataset_name}_{crp_split}"
+    if use_vilt and config.get("question_specific_actmax_cache", False):
+        cache_name = f"{cache_name}_{experiment_suffix}"
     fv = create_feature_visualization(
         attribution=attribution,
         dataset=dataset,
