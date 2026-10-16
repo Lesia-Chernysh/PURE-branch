@@ -491,8 +491,11 @@ def get_max_reference_compatible(
         "composite": composite,
         "rf": use_rf,
         "batch_size": nref,
-        "plot_fn": crop_and_mask_images,
     }
+    # PURE's ViLT visualizer has its own multimodal-aware default renderer.
+    # The CNN crop function can accidentally return the whole BatchFeature.
+    if type(fv).__name__ != "ViLTFeatureVisualization":
+        candidate_kwargs["plot_fn"] = crop_and_mask_images
     accepts_var_kwargs = any(
         parameter.kind == inspect.Parameter.VAR_KEYWORD
         for parameter in signature.parameters.values()
@@ -532,6 +535,38 @@ def embed_reference_images(
     device: torch.device,
     batch_size: int,
 ) -> torch.Tensor:
+    # ViLT visualizers may return a Hugging Face BatchFeature rather than a
+    # Python list. Convert its normalized pixel batch into ordinary PIL images
+    # before applying the independent CLIP/DINO processors.
+    if isinstance(ref_imgs, dict) and "pixel_values" in ref_imgs:
+        ref_imgs = ref_imgs["pixel_values"]
+    elif hasattr(ref_imgs, "pixel_values"):
+        ref_imgs = ref_imgs.pixel_values
+
+    if isinstance(ref_imgs, torch.Tensor):
+        tensors = ref_imgs.detach().cpu().float()
+        if tensors.ndim == 3:
+            tensors = tensors.unsqueeze(0)
+        if tensors.ndim != 4:
+            raise ValueError(
+                f"Expected BCHW reference images, received {tuple(tensors.shape)}"
+            )
+
+        converted = []
+        imagenet_mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        imagenet_std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+        for image in tensors:
+            minimum = float(image.min())
+            maximum = float(image.max())
+            if minimum < 0.0 or maximum > 1.0:
+                if minimum >= -1.05 and maximum <= 1.05:
+                    # Default ViLT normalization: mean=std=0.5.
+                    image = image * 0.5 + 0.5
+                else:
+                    image = image * imagenet_std + imagenet_mean
+            converted.append(to_pil_image(image.clamp(0.0, 1.0)))
+        ref_imgs = converted
+
     dataset = CustomDataset(ref_imgs, processor)
     loader = DataLoader(
         dataset,
