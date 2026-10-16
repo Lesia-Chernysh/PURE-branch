@@ -151,7 +151,14 @@ class ViltImageDataset(Dataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         image, target = self._unpack(self.dataset[index])
         image = self._prepare_for_vilt(image)
-        encoded = self.image_processor(images=image, return_tensors="pt")
+        # ``image`` is a floating-point tensor in [0, 1]. ViLT's processor
+        # otherwise assumes tensor values are in [0, 255] and divides by 255
+        # again, which would collapse the normalized result close to -1.
+        encoded = self.image_processor(
+            images=image,
+            return_tensors="pt",
+            do_rescale=False,
+        )
         pixel_values = encoded["pixel_values"].squeeze(0)
         return pixel_values, torch.as_tensor(target, dtype=torch.long)
 
@@ -315,14 +322,41 @@ def create_feature_visualization(
     preprocess_fn,
     path: str,
 ):
+    # PURE's ViLTFeatureVisualization and upstream CRP's
+    # FeatureVisualization have slightly different constructor signatures.
+    # Pass only keyword arguments supported by the installed implementation.
+    candidate_kwargs = {
+        "preprocess_fn": preprocess_fn,
+        "path": path,
+        "max_target": "sum",
+        "abs_norm": True,
+    }
+    signature = inspect.signature(CRPFeatureVisualization.__init__)
+    accepts_var_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_var_kwargs:
+        supported_kwargs = candidate_kwargs
+    else:
+        supported_kwargs = {
+            key: value
+            for key, value in candidate_kwargs.items()
+            if key in signature.parameters
+        }
+
+    omitted = sorted(set(candidate_kwargs) - set(supported_kwargs))
+    if omitted:
+        print(
+            f"{CRPFeatureVisualization.__name__} does not accept and will omit: "
+            f"{omitted}"
+        )
+
     return CRPFeatureVisualization(
         attribution,
         dataset,
         layer_map,
-        preprocess_fn=preprocess_fn,
-        path=path,
-        max_target="sum",
-        abs_norm=True,
+        **supported_kwargs,
     )
 
 
