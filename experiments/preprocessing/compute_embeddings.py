@@ -366,6 +366,8 @@ def create_feature_visualization(
 def maybe_run_feature_collection(
     fv: CRPFeatureVisualization,
     config: dict[str, Any],
+    composite,
+    device: torch.device,
 ) -> None:
     """Optionally create ActMax files if requested by the configuration."""
 
@@ -379,20 +381,50 @@ def maybe_run_feature_collection(
 
     if hasattr(fv, "run"):
         signature = inspect.signature(fv.run)
-        kwargs = {}
-        if "batch_size" in signature.parameters:
-            kwargs["batch_size"] = batch_size
+        available_values = {
+            "composite": composite,
+            "data_start": start,
+            "start": start,
+            "data_end": end,
+            "end": end,
+            "batch_size": batch_size,
+            "checkpoint": int(config.get("collection_checkpoint", 1000)),
+            "on_device": str(device),
+            "device": str(device),
+            "num_workers": int(config.get("collection_num_workers", 0)),
+        }
+        kwargs = {
+            name: available_values[name]
+            for name in signature.parameters
+            if name != "self" and name in available_values
+        }
+        missing = [
+            name
+            for name, parameter in signature.parameters.items()
+            if name != "self"
+            and parameter.default is inspect.Parameter.empty
+            and parameter.kind
+            not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+            and name not in kwargs
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Cannot call {type(fv).__name__}.run automatically. "
+                f"Unrecognized required parameters: {missing}. "
+                f"Full signature: {signature}"
+            )
+        print(f"Collecting ActMax with {type(fv).__name__}.run{signature}")
         fv.run(**kwargs)
         return
 
     if hasattr(fv, "run_distributed"):
         fv.run_distributed(
-            composite=None,
+            composite=composite,
             data_start=start,
             data_end=end,
             batch_size=batch_size,
             checkpoint=int(config.get("collection_checkpoint", 1000)),
-            on_device=config.get("device", "cuda"),
+            on_device=str(device),
         )
         return
 
@@ -517,7 +549,12 @@ def main(
 
     attribution = CondAttribution(model)
     concept = ChannelConcept()
-    layer_map = {name: concept for name in layer_names}
+    mapped_layers = (
+        [layer_name]
+        if config.get("collect_only_selected_layer", False)
+        else layer_names
+    )
+    layer_map = {name: concept for name in mapped_layers}
 
     crp_split = crp_split or split
     # Existing PURE ActMax caches use ``model_dataset_split``. Keep that as
@@ -533,7 +570,12 @@ def main(
         preprocess_fn=preprocessing,
         path=str(Path("crp_files") / cache_name),
     )
-    maybe_run_feature_collection(fv, config)
+    maybe_run_feature_collection(
+        fv,
+        config,
+        composite=composite,
+        device=device,
+    )
 
     d_c_sorted, _, _ = load_maximization(fv.ActMax.PATH, layer_name)
     num_neurons = d_c_sorted.shape[1]
