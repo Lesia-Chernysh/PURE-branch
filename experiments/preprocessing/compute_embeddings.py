@@ -250,7 +250,7 @@ def get_vilt_layer_names(model: nn.Module) -> list[str]:
     hidden_size = model.vilt_vqa.config.hidden_size
     result = []
     for name, module in model.named_modules():
-        if not name.startswith("vilt_vqa.vilt.encoder.layer."):
+        if not name.startswith("vilt.encoder.layer."):
             continue
         if isinstance(module, nn.Linear) and module.out_features == hidden_size:
             result.append(name)
