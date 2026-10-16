@@ -45,6 +45,7 @@ except ImportError:
         ) from exc
 from safetensors.torch import save_file
 from torch.utils.data import DataLoader, Dataset
+from torchvision.transforms.functional import to_pil_image
 from tqdm.auto import tqdm
 from transformers import (
     AutoImageProcessor,
@@ -155,6 +156,15 @@ class ViltImageDataset(Dataset):
     def __getitem__(self, index: int):
         image, target = self._unpack(self.dataset[index])
         image = self._prepare_for_vilt(image)
+        target = torch.as_tensor(target, dtype=torch.long)
+
+        # PURE's ViLTFeatureVisualization owns multimodal preprocessing and
+        # calls its processor with the collected PIL images and questions.
+        if self.return_vqa_triplet:
+            if isinstance(image, torch.Tensor):
+                image = to_pil_image(image)
+            return image, self.question, target
+
         # ``image`` is a floating-point tensor in [0, 1]. ViLT's processor
         # otherwise assumes tensor values are in [0, 255] and divides by 255
         # again, which would collapse the normalized result close to -1.
@@ -164,9 +174,6 @@ class ViltImageDataset(Dataset):
             do_rescale=False,
         )
         pixel_values = encoded["pixel_values"].squeeze(0)
-        target = torch.as_tensor(target, dtype=torch.long)
-        if self.return_vqa_triplet:
-            return pixel_values, self.question, target
         return pixel_values, target
 
     def _prepare_for_vilt(self, image: Any) -> Any:
@@ -331,6 +338,7 @@ def create_feature_visualization(
     layer_map: dict[str, ChannelConcept],
     preprocess_fn,
     path: str,
+    processor=None,
 ):
     # PURE's ViLTFeatureVisualization and upstream CRP's
     # FeatureVisualization have slightly different constructor signatures.
@@ -340,6 +348,7 @@ def create_feature_visualization(
         "path": path,
         "max_target": "sum",
         "abs_norm": True,
+        "processor": processor,
     }
     signature = inspect.signature(CRPFeatureVisualization.__init__)
     accepts_var_kwargs = any(
@@ -587,6 +596,11 @@ def main(
 
         first_sample = dataset[0]
         image = first_sample[0]
+        if not isinstance(image, torch.Tensor):
+            image = processor.image_processor(
+                images=image,
+                return_tensors="pt",
+            )["pixel_values"].squeeze(0)
         print(f"ViLT checkpoint: {checkpoint}")
         print(f"ViLT question: {question}")
         print(
@@ -630,6 +644,7 @@ def main(
         layer_map=layer_map,
         preprocess_fn=preprocessing,
         path=str(Path("crp_files") / cache_name),
+        processor=processor if use_vilt else None,
     )
     maybe_run_feature_collection(
         fv,
