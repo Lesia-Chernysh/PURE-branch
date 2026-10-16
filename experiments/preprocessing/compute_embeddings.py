@@ -448,6 +448,55 @@ def extract_pixel_values(batch: Any) -> torch.Tensor:
     raise TypeError(f"Unsupported processed image batch: {type(batch)!r}")
 
 
+def get_max_reference_compatible(
+    fv,
+    neuron: int,
+    layer_name: str,
+    nref: int,
+    composite,
+    use_rf: bool,
+):
+    """Call upstream or PURE ViLT get_max_reference APIs safely."""
+
+    method = fv.get_max_reference
+    signature = inspect.signature(method)
+    candidate_kwargs = {
+        "composite": composite,
+        "rf": use_rf,
+        "batch_size": nref,
+        "plot_fn": crop_and_mask_images,
+    }
+    accepts_var_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_var_kwargs:
+        supported_kwargs = candidate_kwargs
+    else:
+        supported_kwargs = {
+            key: value
+            for key, value in candidate_kwargs.items()
+            if key in signature.parameters
+        }
+
+    # Report the API difference once instead of once per neuron.
+    omitted = sorted(set(candidate_kwargs) - set(supported_kwargs))
+    if omitted and neuron == 0:
+        print(
+            f"{type(fv).__name__}.get_max_reference{signature} "
+            f"does not accept and will omit: {omitted}"
+        )
+
+    references = method(
+        [neuron],
+        layer_name,
+        "activation",
+        (0, nref),
+        **supported_kwargs,
+    )
+    return references[neuron]
+
+
 @torch.inference_mode()
 def embed_reference_images(
     ref_imgs,
@@ -593,16 +642,14 @@ def main(
     use_rf = bool(config.get("use_receptive_field", composite is not None))
 
     for neuron in tqdm(range(num_neurons), desc="Embedding references"):
-        ref_imgs = fv.get_max_reference(
-            [neuron],
-            layer_name,
-            "activation",
-            (0, nref),
+        ref_imgs = get_max_reference_compatible(
+            fv=fv,
+            neuron=neuron,
+            layer_name=layer_name,
+            nref=nref,
             composite=composite,
-            rf=use_rf,
-            batch_size=nref,
-            plot_fn=crop_and_mask_images,
-        )[neuron]
+            use_rf=use_rf,
+        )
         clip_embeddings.append(
             embed_reference_images(
                 ref_imgs,
