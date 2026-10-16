@@ -158,10 +158,48 @@ def _vilt_tensor_to_display_batch(value):
 def prepare_vilt_reference_dict(references):
     """Make every ViLT concept value safe for CRP's plot_grid/imgify."""
 
-    return {
-        concept_id: _vilt_tensor_to_display_batch(value)
-        for concept_id, value in references.items()
-    }
+    converted = {}
+    for concept_id, value in references.items():
+        images = flatten_vilt_references(value)
+        display_tensors = []
+        for image in images:
+            pil_image = to_display_image(image)
+            display_tensors.append(
+                torchvision.transforms.functional.pil_to_tensor(
+                    pil_image
+                ).float() / 255.0
+            )
+        converted[concept_id] = torch.stack(display_tensors)
+    return converted
+
+
+def flatten_vilt_references(value):
+    """Flatten nested ViLT reference containers into individual images."""
+
+    value = _extract_pixel_values(value)
+
+    if torch.is_tensor(value):
+        batch = _vilt_tensor_to_display_batch(value)
+        return [batch[index] for index in range(batch.shape[0])]
+
+    if isinstance(value, np.ndarray):
+        if value.ndim == 4:
+            return [value[index].copy() for index in range(value.shape[0])]
+        return [value.copy()]
+
+    if hasattr(value, "convert"):
+        return [value]
+
+    if isinstance(value, (list, tuple)):
+        flattened = []
+        for item in value:
+            flattened.extend(flatten_vilt_references(item))
+        return flattened
+
+    raise TypeError(
+        "Unsupported ViLT reference container: "
+        f"{type(value)!r}"
+    )
 
 
 def get_reference_images(
@@ -199,7 +237,7 @@ def get_reference_images(
 
     neuron_references = references[neuron]
     if model_name == "vilt":
-        neuron_references = _vilt_tensor_to_display_batch(
+        neuron_references = flatten_vilt_references(
             neuron_references
         )
 
