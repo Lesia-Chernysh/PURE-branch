@@ -7,7 +7,10 @@ import yaml
 from crp.attribution import CondAttribution
 from crp.concepts import ChannelConcept
 from crp.helper import load_maximization
-from crp.visualization import FeatureVisualization
+try:
+  from crp.visualization import FeatureVisualization
+except:
+  from crp.visualization import ViLTFeatureVisualization
 from safetensors.torch import save_file
 from torch.utils.data import DataLoader
 from tqdm import tqdm
